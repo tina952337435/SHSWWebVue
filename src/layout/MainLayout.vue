@@ -1,0 +1,150 @@
+<template>
+  <div class="layout">
+    <header class="topbar">
+      <div class="logo">
+        <span class="mark">
+          <img :src="logoUrl" alt="中国水文" />
+        </span>
+        <span class="tt">{{ SYS_TITLE }}</span>
+      </div>
+
+      <nav class="topnav">
+        <a
+          v-for="m in MODULES"
+          :key="m.k"
+          :class="{ on: activeModule === m.k }"
+          @click="goModule(m.k)"
+        >
+          <el-icon class="ni"><component :is="ICONS[m.k]" /></el-icon>
+          <span>{{ m.n }}</span>
+        </a>
+      </nav>
+
+      <div class="right">
+        <!-- <span class="tm">{{ clock }}</span> -->
+        <div class="user">
+          <el-icon class="ui"><User /></el-icon>
+          <span class="un">管理员</span>
+          <el-icon class="cr"><ArrowDown /></el-icon>
+        </div>
+      </div>
+    </header>
+
+    <div class="shell">
+      <!-- 左侧子菜单：结构与样式对齐参考项目 MixLayout（el-menu + 60px 折叠头） -->
+      <aside
+        v-if="activeModule === 'zp'"
+        class="side"
+        :class="{ collapsed }"
+      >
+        <div class="side-hd">
+          <el-icon class="fold" @click="collapsed = !collapsed">
+            <Expand v-if="collapsed" />
+            <Fold v-else />
+          </el-icon>
+        </div>
+
+        <el-menu
+          :default-active="activeSub"
+          :collapse="collapsed"
+          class="side-menu"
+          @select="goSub"
+        >
+          <template v-for="it in SUBMENUS.zp" :key="it.k">
+            <!-- 有子菜单 -->
+            <el-sub-menu v-if="it.children" :index="it.k">
+              <template #title>
+                <el-icon><component :is="SUB_ICONS[it.k]" /></el-icon>
+                <span>{{ it.n }}</span>
+              </template>
+              <el-menu-item v-for="c in it.children" :key="c.k" :index="c.k">
+                {{ c.n }}
+              </el-menu-item>
+            </el-sub-menu>
+            <!-- 普通菜单项 -->
+            <el-menu-item v-else :index="it.k">
+              <el-icon><component :is="SUB_ICONS[it.k]" /></el-icon>
+              <span>{{ it.n }}</span>
+            </el-menu-item>
+          </template>
+        </el-menu>
+      </aside>
+
+      <main class="main">
+        <router-view />
+      </main>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  HomeFilled, Connection, Odometer, Cloudy, DataAnalysis, Histogram, Document,
+  User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts
+} from '@element-plus/icons-vue'
+import { SYS_TITLE, MODULES, SUBMENUS } from '@/config/menu'
+
+// public 下的静态资源：用 BASE_URL 拼接，兼容根路径 / 子路径部署
+const logoUrl = `${import.meta.env.BASE_URL}images/logo.png`
+
+const ICONS = {
+  home: HomeFilled,
+  zw: Connection,
+  swjc: Odometer,
+  swyb: Cloudy,
+  szjg: DataAnalysis,
+  zp: Histogram,
+  swzb: Document
+}
+
+const route = useRoute()
+const router = useRouter()
+
+const activeModule = computed(() => {
+  if (route.name === 'home') return 'home'
+  if (route.path.startsWith('/zp')) return 'zp'
+  return route.params.mod || route.meta.mod || 'home'
+})
+
+const activeSub = computed(() => {
+  return route.params.sub || route.meta.sub || ''
+})
+
+function goModule(k) {
+  if (k === 'home') router.push('/home')
+  else if (k === 'zp') router.push('/zp/rt')
+  else router.push(`/${k}`)
+}
+
+function goSub(k) {
+  if (k === 'rt') router.push('/zp/rt')
+  else if (k === 'qr') router.push('/zp/qr')
+  else router.push(`/zp/${k}`)
+}
+
+// 二级菜单图标（与参考项目一致：一级菜单项带图标）
+const SUB_ICONS = {
+  rt: Odometer,
+  qr: Histogram,
+  jcrl: Switch,
+  wt: DataAnalysis,
+  stll: Bell,
+  stl: TrendCharts
+}
+
+// 侧边栏折叠
+const collapsed = ref(false)
+
+// 时钟
+const clock = ref('')
+let timer = null
+function tick() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  clock.value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+onMounted(() => { tick(); timer = setInterval(tick, 1000) })
+onBeforeUnmount(() => { clearInterval(timer) })
+</script>

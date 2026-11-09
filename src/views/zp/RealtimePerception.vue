@@ -1,0 +1,781 @@
+<template>
+  <div class="realtime" :class="{ 'side-open': sideOpen }">
+    <!-- ============ 地图（上海「一张图」OneMap 实景底图） ============ -->
+    <div class="mapwrap" ref="mapWrap">
+      <svg
+        ref="mapRef"
+        :viewBox="vb"
+        preserveAspectRatio="xMidYMid meet"
+        :style="{ cursor: dragging ? 'grabbing' : 'grab' }"
+        @wheel.prevent="onWheel"
+        @mousedown.prevent="onDown"
+        @dblclick="resetView"
+      >
+        <defs>
+          <!-- 站点外发光 -->
+          <radialGradient id="stGlow">
+            <stop offset="0%" stop-color="#3ba4f2" stop-opacity=".4" />
+            <stop offset="45%" stop-color="#3ba4f2" stop-opacity=".13" />
+            <stop offset="100%" stop-color="#3ba4f2" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+
+        <!-- 底图瓦片（上海城建坐标格网，与 OneMap tiled 服务一致） -->
+        <rect :width="MW" :height="MH" fill="#e9eef4" />
+        <image
+          v-for="t in tiles"
+          :key="t.k"
+          :href="t.url"
+          :x="t.x"
+          :y="t.y"
+          :width="t.w"
+          :height="t.h"
+          preserveAspectRatio="none"
+          @load="onTileLoad"
+          @error="onTileError"
+        />
+
+        <!-- 水利片区边界：常显，水利片区维度下高亮选中项 -->
+        <g v-for="p in SLP" :key="p.n">
+          <path
+            :d="slpPath[p.n]"
+            :fill="slpFill(p.n)"
+            :stroke="slpStroke(p.n)"
+            :stroke-width="slpWidth(p.n)"
+            stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
+          />
+          <!-- 边界流动虚线：让片区轮廓有“水在流”的感觉 -->
+          <path
+            :d="slpPath[p.n]"
+            fill="none"
+            stroke="#4aa9f0"
+            stroke-width="1.3"
+            stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
+            class="slp-flow"
+            :style="{ opacity: slpOn(p.n) ? 0.95 : 0.3 }"
+          />
+        </g>
+
+        <!-- 行政区：底图自带区界，这里只叠加选中区的高亮，不重复画一套边界 -->
+        <g v-if="FS.dim === 'adm'">
+          <path
+            v-for="name in admSel"
+            :key="name"
+            :d="distPath[name]"
+            fill="rgba(1,125,228,.14)"
+            stroke="#017de4"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
+          />
+        </g>
+
+        <!-- 片区名 -->
+        <text
+          v-for="l in slpLabels"
+          :key="l.n"
+          :x="l.x.toFixed(1)"
+          :y="l.y.toFixed(1)"
+          fill="#245c85"
+          :font-size="8.5 * scaleK"
+          text-anchor="middle"
+          style="paint-order: stroke; stroke: #fff; stroke-width: 2.6px; pointer-events: none"
+        >{{ l.n }}</text>
+
+        <!-- 站点 -->
+        <g
+          v-for="(d, i) in rendered"
+          :key="d.st.nm"
+          style="cursor: pointer"
+          :transform="`translate(${d.x.toFixed(1)} ${d.y.toFixed(1)}) scale(${scaleK}) translate(${(-d.x).toFixed(1)} ${(-d.y).toFixed(1)})`"
+          @mouseenter="showTip(d.st, $event)"
+          @mouseleave="hideTip"
+          @click="select(d.st.nm)"
+        >
+          <circle :cx="d.x.toFixed(1)" :cy="d.y.toFixed(1)" :r="d.r + 8" fill="transparent" />
+
+          <!-- 站点外发光（呼吸） -->
+          <circle
+            :cx="d.x.toFixed(1)"
+            :cy="d.y.toFixed(1)"
+            :r="(d.r * 2.4).toFixed(1)"
+            fill="url(#stGlow)"
+            class="st-glow"
+            :style="{ animationDelay: ((i % 7) * 0.28).toFixed(2) + 's' }"
+            pointer-events="none"
+          />
+
+          <!-- 流向：光晕拖尾 + 流动虚线 + 箭头 -->
+          <g
+            v-if="d.arrowRot != null"
+            :transform="`translate(${d.x.toFixed(1)},${d.y.toFixed(1)}) rotate(${d.arrowRot})`"
+            pointer-events="none"
+          >
+            <path :d="`M0,${-d.r - 1} L0,-20`" :stroke="d.c" stroke-width="4.2" stroke-linecap="round" opacity=".14" />
+            <path class="fi-dash" :d="`M0,${-d.r - 1} L0,-20`" :stroke="d.c" stroke-width="1.6" stroke-linecap="round" />
+            <path d="M0,-24 L3.1,-18.4 L-3.1,-18.4 Z" :fill="d.c" />
+          </g>
+
+          <!-- 选中圈 -->
+          <circle
+            v-if="d.on"
+            :cx="d.x.toFixed(1)"
+            :cy="d.y.toFixed(1)"
+            :r="d.r + 5"
+            fill="none"
+            stroke="#017de4"
+            stroke-width="1.4"
+            opacity=".9"
+          >
+            <animate attributeName="r" :values="`${d.r + 3};${d.r + 8};${d.r + 3}`" dur="1.8s" repeatCount="indefinite" />
+          </circle>
+
+          <circle :cx="d.x.toFixed(1)" :cy="d.y.toFixed(1)" :r="d.r" :fill="d.c" stroke="#fff" stroke-width="1.2" />
+
+          <!-- 标签 -->
+          <g v-if="d.label" pointer-events="none">
+            <rect
+              :x="d.label[0].toFixed(1)"
+              :y="(d.label[1] - 1).toFixed(1)"
+              :width="d.w.toFixed(1)"
+              :height="d.h"
+              rx="2"
+              :fill="d.on ? 'rgba(255,255,255,.97)' : 'rgba(255,255,255,.92)'"
+              :stroke="d.on ? '#017de4' : 'rgba(1,125,228,.28)'"
+              :stroke-width="d.on ? 1 : .6"
+            />
+            <text :x="(d.label[0] + 3.5).toFixed(1)" :y="(d.label[1] + 8.5).toFixed(1)" font-size="8" fill="#17324a">{{ d.st.nm }}</text>
+            <text v-if="d.qt != null" :x="(d.label[0] + 3.5).toFixed(1)" :y="(d.label[1] + 18.5).toFixed(1)" font-size="8" :fill="d.qc">{{ d.qt }} m³/s</text>
+          </g>
+        </g>
+      </svg>
+
+      <!-- 图例 -->
+      <div class="map-legend">
+        <div class="tl">图例</div>
+        <div class="row"><i></i> 自有站</div>
+        <div class="row"><i class="sh"></i> 共享站（外省市边界站）</div>
+        <div class="row"><i class="rg"></i> 水利片区</div>
+      </div>
+
+      <!-- 指北针 / 比例尺 -->
+      <div class="map-north" title="正北"><i></i><span>N</span></div>
+      <div v-if="scaleBar" class="map-scale">
+        <span class="num">{{ scaleBar.label }}</span>
+        <i :style="{ width: scaleBar.w + 'px' }"></i>
+      </div>
+
+      <!-- 悬停提示 -->
+      <div v-if="tip.show" class="map-tip" :style="{ left: tip.left + 'px', top: tip.top + 'px', display: 'block' }">
+        <b>{{ tip.st.nm }}</b> <span style="opacity: .7">{{ tip.st.riv || '—' }}</span><br />
+        实时流量 <b>{{ tip.st.q == null ? '—' : nf(tip.st.q, 2) + ' m³/s' }}</b><br />
+        <template v-if="tip.st.wrz != null">
+          水位 <b>{{ nf(tip.st.wrz, 2) }} m</b>（警戒 {{ nf(tip.st.grz, 2) }} m）<br />
+        </template>
+        流向 <b>{{ tip.st.dir || '—' }}</b>{{ tip.st.dist ? '　' + tip.st.dist : '' }}<br />
+        水利片区 <b>{{ slpIndex[tip.st.nm] || '—' }}</b>
+      </div>
+
+      <!-- 右侧明细表伸缩按钮 -->
+      <button
+        class="side-tab"
+        type="button"
+        :title="sideOpen ? '收起明细表' : '展开明细表'"
+        @click.stop="sideOpen = !sideOpen"
+      >
+        <span class="ico">{{ sideOpen ? '›' : '‹' }}</span>
+        <span class="lb">{{ sideOpen ? '收起' : '明细' }}</span>
+      </button>
+    </div>
+
+    <!-- ============ 右侧 ============ -->
+    <div class="rt-side" v-show="sideOpen">
+      <div class="stat-row">
+        <div class="stat"><div class="k">断面总数</div><div class="v">{{ STN.length }}<small>个</small></div></div>
+        <div class="stat"><div class="k">自有站</div><div class="v">{{ SZ.length }}<small>个</small></div></div>
+        <div class="stat"><div class="k">共享站</div><div class="v">{{ OUT.length }}<small>个</small></div></div>
+      </div>
+
+      <div class="filterbar">
+        <!-- 行政区 / 水利片区 二选一 -->
+        <div class="fb-row">
+          <span class="lb">维度</span>
+          <div class="sc-tabs dimsw">
+            <span
+              v-for="d in DIMS"
+              :key="d.k"
+              class="sc-item"
+              :class="{ on: FS.dim === d.k }"
+              @click="setDim(d.k)"
+            >{{ d.n }}</span>
+          </div>
+          <span class="fb-note">共 {{ visible.length }} / {{ STN.length }} 个断面</span>
+        </div>
+
+        <div class="fb-row">
+          <span class="lb">{{ FS.dim === 'adm' ? '行政区' : '水利片区' }}</span>
+          <div class="ms" :class="{ open: openMs === 'dim' }">
+            <button class="ms-btn" type="button" @click.stop="toggleMs('dim')">{{ dimBtnText }} <i>▾</i></button>
+            <div class="ms-panel">
+              <label v-for="o in dimOptions" :key="o" class="ms-item">
+                <input type="checkbox" :checked="curSel.includes(o)" @change="toggleFilter(o)" />
+                <span>{{ o }}</span>
+              </label>
+              <label v-if="!dimOptions.length" class="ms-item muted">
+                <span>{{ FS.dim === 'slp' ? '片区边界加载中…' : '暂无数据' }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="fb-row">
+          <span class="lb">搜索</span>
+          <input type="text" v-model="FS.kw" placeholder="站名 / 站码 / 河道" style="flex: 1" />
+        </div>
+      </div>
+
+      <div class="card" style="flex: 1">
+        <div class="hd">断面实时监测明细<span class="tag">监测时间 {{ SZ[0] && SZ[0].tm }}</span><ExportButton @export="exportCsv" style="margin-left:10px" /></div>
+        <div class="bd" style="padding: 0">
+          <table class="dt">
+            <thead>
+              <tr>
+                <th style="width: 64px">序号</th>
+                <th>断面名称</th>
+                <th class="num" style="width: 120px">流量(m³/s)</th>
+                <th>所在河道</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(s, i) in visible" :key="s.nm" :class="{ sel: FS.sel === s.nm }" @click="select(s.nm)">
+                <td class="muted">{{ i + 1 }}</td>
+                <td><b>{{ s.nm }}</b></td>
+                <td class="num">{{ s.q == null ? '—' : nf(s.q, 2) }}</td>
+                <td>{{ s.riv || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { STN } from '@/data/stations'
+import { DIST } from '@/data/districts'
+import ExportButton from '@/components/ExportButton.vue'
+import { downloadCsv } from '@/utils/csv'
+
+const SZ = STN.filter((s) => s.sz)
+const OUT = STN.filter((s) => !s.sz)
+
+/* ================= 投影：上海2000 城建坐标（与一张图瓦片格网一致） ================= */
+// 一张图的瓦片缓存按上海本地格网（城建坐标，单位米）编号，底图本身也是在这个
+// 平面上渲染的。矢量数据必须换算到同一套城建坐标再画，才能和底图严丝合缝；
+// 用经纬度 + 墨卡托投影叠上去，越往外围偏得越多（墨卡托在 31°N 放大约 1.17 倍）。
+// 经纬度 → 城建坐标 的一阶变换由参考工程里同一套水利片区的「经纬度版」与
+// 「2000 版」逐点拟合得到，残差 < 5 m。
+const CJ = { ax: 95192.4, bx: -28.79, cx: -11561907.8, ay: 50.97, by: 110872.1, cy: -3469339.4 }
+const CJ_DET = CJ.ax * CJ.by - CJ.bx * CJ.ay
+const cjX = (lon, lat) => CJ.ax * lon + CJ.bx * lat + CJ.cx
+const cjY = (lon, lat) => CJ.ay * lon + CJ.by * lat + CJ.cy
+const cjLon = (x, y) => (CJ.by * (x - CJ.cx) - CJ.bx * (y - CJ.cy)) / CJ_DET
+const cjLat = (x, y) => (CJ.ax * (y - CJ.cy) - CJ.ay * (x - CJ.cx)) / CJ_DET
+
+const BBOX = { x0: -88000, x1: 82500, y0: -76000, y1: 79500 }  // 城建坐标范围（米）
+const MW = 1000
+const X0 = BBOX.x0                       // 视口左边界
+const Y0 = BBOX.y1                       // 视口上边界（城建 y 最大）
+const XS = BBOX.x1 - X0
+const YS = Y0 - BBOX.y0
+const MH = Math.round((MW * YS) / XS)    // 保持 1:1 比例，避免底图拉伸
+
+function proj(lon, lat) {
+  return [((cjX(lon, lat) - X0) / XS) * MW, ((Y0 - cjY(lon, lat)) / YS) * MH]
+}
+function pathOf(ring) {
+  let d = ''
+  ring.forEach((p, i) => {
+    const xy = proj(p[0], p[1])
+    d += (i ? 'L' : 'M') + xy[0].toFixed(2) + ',' + xy[1].toFixed(2)
+  })
+  return d + 'Z'
+}
+
+/* ================= OneMap 底图瓦片 ================= */
+const TILE_BASE = 'https://service-api.onemap.sh.cegn.cn/OneMapServer/rest/services/j01_basemap_normal/MapServer/tile'
+const TILE_TOKEN = 'd01b7f932ff44c04bd0b026e9daaae97'
+// 一张图缓存把城建坐标（米）直接铺在与 Web 墨卡托同尺寸的世界格网上编号：
+//   col = (x + 20037508.34) / 世界宽 × 2^级别
+//   row = (20037508.34 − y) / 世界宽 × 2^级别
+// 所以行列号直接由城建坐标算出，不需要任何额外偏移。
+const WORLD = 40075016.69
+const WORLD_HALF = 20037508.342787
+const tileUrl = (z, r, c) => `${TILE_BASE}/${z}/${r}/${c}?jcmp-token=${TILE_TOKEN}`
+// 备用浅色底图（标准 Web 墨卡托）：OneMap 不可用时自动顶上，按经纬度反算位置贴上
+const TILE_FALLBACK = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile'
+const fallbackUrl = (z, x, y) => `${TILE_FALLBACK}/${z}/${y}/${x}`
+const tileErr = ref(0)
+const tileOk = ref(false)
+// 只有一张都没加载成功时才判定服务不可用；平移出上海范围导致的零星 404 不切底图
+const useFallback = computed(() => !tileOk.value && tileErr.value >= 3)
+function onTileError() { if (!tileOk.value) tileErr.value += 1 }
+function onTileLoad() { tileOk.value = true }
+
+/* ================= 地图缩放 / 平移 ================= */
+const mapRef = ref(null)
+const mapWrap = ref(null)
+// 右侧明细表默认收起，只留地图；点地图右边缘的小标签拉出/收起
+const sideOpen = ref(false)
+const view = reactive({ x: 0, y: 0, w: MW, h: MH })
+const vb = computed(() => `${view.x.toFixed(1)} ${view.y.toFixed(1)} ${view.w.toFixed(1)} ${view.h.toFixed(1)}`)
+const scaleK = computed(() => Number((view.w / MW).toFixed(4)))
+// 比例尺：按当前视口换算“米/像素”，取贴近 90px 的常用刻度
+const scaleBar = computed(() => {
+  if (!px.w || !view.w) return null
+  const mPerPx = ((XS / MW) * view.w) / px.w
+  if (!isFinite(mPerPx) || mPerPx <= 0) return null
+  const steps = [50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 50000, 100000, 200000]
+  let best = steps[0]
+  for (const s of steps) if (Math.abs(s / mPerPx - 90) < Math.abs(best / mPerPx - 90)) best = s
+  return { w: Math.max(44, Math.round(best / mPerPx)), label: best >= 1000 ? `${best / 1000} km` : `${best} m` }
+})
+const ZMIN = 0.15        // 最小可视宽度（相对 MW）
+const dragging = ref(false)
+const drag = { sx: 0, sy: 0, vx: 0, vy: 0, moved: false }
+
+// svg 实际像素尺寸（用于换算瓦片级别与拖拽比例）
+const px = reactive({ w: 0, h: 0 })
+function measure() {
+  const el = mapRef.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  px.w = r.width
+  px.h = r.height
+  if (!fitted && px.w && px.h) { fitted = true; fitView() } else if (fitted) setAspect()
+}
+// 视口比例跟随容器：否则 SVG 会按数据范围留出上下/左右空白
+function viewAR() {
+  if (!px.w || !px.h) return MW / MH
+  return px.w / px.h
+}
+let fitted = false
+// 自适应：宽度取数据范围，高度按容器比例；容器更扁时反过来
+function fitView() {
+  const ar = viewAR()
+  const pad = 1.06          // 默认视野留一点边，别把市域顶满
+  let w = MW * pad
+  let h = w / ar
+  if (h < MH * pad) { h = MH * pad; w = h * ar }
+  view.w = w
+  view.h = h
+  view.x = (MW - w) / 2
+  view.y = (MH - h) / 2
+}
+// 容器尺寸变了：保持中心和宽度，只改高度
+function setAspect() {
+  const ar = viewAR()
+  const cx = view.x + view.w / 2
+  const cy = view.y + view.h / 2
+  view.h = view.w / ar
+  view.x = cx - view.w / 2
+  view.y = cy - view.h / 2
+  clampView()
+}
+// 当前「每绘制单位对应多少屏幕像素」
+function fitScale() {
+  if (!px.w || !px.h) return 1
+  return Math.min(px.w / view.w, px.h / view.h)
+}
+// 视口可以比数据范围大（多露一点海面），数据始终留在视口内
+function clampAxis(v, size, box) {
+  if (size <= box) return Math.min(Math.max(0, v), box - size)
+  return Math.min(Math.max(box - size, v), 0)
+}
+function clampView() {
+  view.x = clampAxis(view.x, view.w, MW)
+  view.y = clampAxis(view.y, view.h, MH)
+}
+function onWheel(e) {
+  const el = mapRef.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const s = fitScale()
+  const ox = (r.width - view.w * s) / 2
+  const oy = (r.height - view.h * s) / 2
+  // 鼠标位置换算成 SVG 坐标
+  const cx = view.x + (e.clientX - r.left - ox) / s
+  const cy = view.y + (e.clientY - r.top - oy) / s
+
+  const ar = viewAR()
+  // 最大缩放不能小于「铺满容器」的初始视口
+  const wmax = Math.max(MW, MH * ar)
+  const nw = Math.min(wmax, Math.max(MW * ZMIN, view.w * (e.deltaY < 0 ? 0.82 : 1.22)))
+  const f = nw / view.w
+  if (Math.abs(f - 1) < 1e-4) return
+  view.x = cx - (cx - view.x) * f
+  view.y = cy - (cy - view.y) * f
+  view.w = nw
+  view.h = nw / ar
+  clampView()
+}
+function onDown(e) {
+  if (e.button !== 0) return
+  dragging.value = true
+  drag.sx = e.clientX; drag.sy = e.clientY
+  drag.vx = view.x; drag.vy = view.y
+  drag.moved = false
+}
+function onMove(e) {
+  if (!dragging.value) return
+  const dx = e.clientX - drag.sx
+  const dy = e.clientY - drag.sy
+  if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+  drag.moved = true
+  const s = fitScale()
+  view.x = drag.vx - dx / s
+  view.y = drag.vy - dy / s
+  clampView()
+}
+function onUp() { dragging.value = false }
+function resetView() { fitView() }
+
+/* 瓦片级别：让一张 256px 瓦片在屏幕上约等于 256px，宁可清晰不模糊 */
+const tileZ = computed(() => {
+  // 屏幕上「1 城建米」占多少像素 → 一张 256px 瓦片该用哪一级
+  const v = Math.log2(((fitScale() * MW) / XS) * (WORLD / 256))
+  return Math.max(3, Math.min(17, Math.ceil(v)))
+})
+// 视口四角换算成城建坐标（供底图取瓦片、备用底图定位共用）
+function viewBoxCJ() {
+  const gx0 = X0 + (view.x / MW) * XS
+  const gx1 = X0 + ((view.x + view.w) / MW) * XS
+  const gy1 = Y0 - (view.y / MH) * YS
+  const gy0 = Y0 - ((view.y + view.h) / MH) * YS
+  return { gx0, gx1, gy0, gy1 }
+}
+const tiles = computed(() => {
+  const z = tileZ.value
+  const n = 2 ** z
+  const out = []
+  const { gx0, gx1, gy0, gy1 } = viewBoxCJ()
+
+  if (useFallback.value) {
+    // 备用底图是标准 Web 墨卡托瓦片：按经纬度反算它在城建平面上该摆的位置
+    const toLon = (c) => (c / n) * 360 - 180
+    const toLat = (r) => {
+      const m = 0.5 - r / n
+      return (Math.atan(Math.sinh(m * 2 * Math.PI)) * 180) / Math.PI
+    }
+    const mX = (lon) => (lon + 180) / 360
+    const mY = (lat) => {
+      const s = Math.sin((lat * Math.PI) / 180)
+      return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)
+    }
+    const lonW = cjLon(gx0, (gy0 + gy1) / 2)
+    const lonE = cjLon(gx1, (gy0 + gy1) / 2)
+    const latN = cjLat((gx0 + gx1) / 2, gy1)
+    const latS = cjLat((gx0 + gx1) / 2, gy0)
+    const tx0 = Math.floor(mX(lonW) * n)
+    const tx1 = Math.floor(mX(lonE) * n)
+    const ty0 = Math.floor(mY(latN) * n)
+    const ty1 = Math.floor(mY(latS) * n)
+    for (let ty = Math.max(0, ty0); ty <= Math.min(n - 1, ty1); ty++) {
+      for (let tx = Math.max(0, tx0); tx <= Math.min(n - 1, tx1); tx++) {
+        const lonL = toLon(tx), lonR = toLon(tx + 1)
+        const latT = toLat(ty), latB = toLat(ty + 1)
+        const mLon = (lonL + lonR) / 2, mLat = (latT + latB) / 2
+        const xL = cjX(lonL, mLat), xR = cjX(lonR, mLat)
+        const yT = cjY(mLon, latT), yB = cjY(mLon, latB)
+        out.push({
+          k: `f${z}/${tx}/${ty}`,
+          url: fallbackUrl(z, tx, ty),
+          x: ((xL - X0) / XS) * MW,
+          y: ((Y0 - yT) / YS) * MH,
+          w: ((xR - xL) / XS) * MW + 0.4,
+          h: ((yT - yB) / YS) * MH + 0.4
+        })
+      }
+    }
+    return out
+  }
+
+  // 一张瓦片覆盖 t 米（城建坐标），行列号直接由城建坐标换算
+  const t = WORLD / n
+  const c0 = Math.floor((gx0 + WORLD_HALF) / t)
+  const c1 = Math.floor((gx1 + WORLD_HALF) / t)
+  const r0 = Math.floor((WORLD_HALF - gy1) / t)
+  const r1 = Math.floor((WORLD_HALF - gy0) / t)
+  const bw = (t / XS) * MW
+  const bh = (t / YS) * MH
+  for (let cr = Math.max(0, r0); cr <= Math.min(n - 1, r1); cr++) {
+    for (let cc = Math.max(0, c0); cc <= Math.min(n - 1, c1); cc++) {
+      out.push({
+        k: `${z}/${cr}/${cc}`,
+        url: tileUrl(z, cr, cc),
+        x: (((cc * t - WORLD_HALF) - X0) / XS) * MW,
+        y: ((Y0 - (WORLD_HALF - cr * t)) / YS) * MH,
+        w: bw + 0.4,
+        h: bh + 0.4
+      })
+    }
+  }
+  return out
+})
+
+/* ================= 水利片区（上海市水利片区边界） ================= */
+const SLP = ref([])
+const slpPath = computed(() => {
+  const m = {}
+  for (const p of SLP.value) m[p.n] = pathOf(p.r)
+  return m
+})
+function inRing(ring, lon, lat) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+// 站点 → 水利片区（点面判断；落在水面上/界外的按最近片中心兜底）
+const slpIndex = computed(() => {
+  const map = {}
+  if (!SLP.value.length) return map
+  const cents = SLP.value.map((p) => {
+    const n = p.r.length - 1
+    let sx = 0, sy = 0
+    for (let i = 0; i < n; i++) { sx += p.r[i][0]; sy += p.r[i][1] }
+    return [sx / n, sy / n]
+  })
+  for (const s of STN) {
+    if (s.lon == null || s.lat == null) continue
+    let name = null
+    for (const p of SLP.value) {
+      if (inRing(p.r, s.lon, s.lat)) { name = p.n; break }
+    }
+    if (!name) {
+      let bd = Infinity
+      SLP.value.forEach((p, i) => {
+        const d = Math.hypot(cents[i][0] - s.lon, cents[i][1] - s.lat)
+        if (d < bd) { bd = d; name = p.n }
+      })
+    }
+    map[s.nm] = name
+  }
+  return map
+})
+const SLPS = computed(() => SLP.value.map((p) => p.n))
+
+// 片区名（互相压盖的自动隐藏，放大后逐步出现）
+const slpLabels = computed(() => {
+  const k = view.w / MW
+  const placed = []
+  const out = []
+  for (const p of SLP.value) {
+    const n = p.r.length - 1
+    let sx = 0, sy = 0
+    for (let i = 0; i < n; i++) { sx += p.r[i][0]; sy += p.r[i][1] }
+    const [x, y] = proj(sx / n, sy / n)
+    const w = (p.n.length * 11 + 8) * k
+    const h = 14 * k
+    let ok = true
+    for (const r of placed) {
+      if (x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y) { ok = false; break }
+    }
+    if (!ok) continue
+    placed.push({ x, y, w, h })
+    out.push({ n: p.n, x, y })
+  }
+  return out
+})
+
+/* 片区 / 行政区 着色 */
+const slpOn = (n) => FS.dim === 'slp' && FS.slp.includes(n)
+function slpFill(n) {
+  if (slpOn(n)) return 'rgba(1,125,228,.14)'
+  return 'transparent'
+}
+function slpStroke(n) {
+  if (FS.dim === 'slp' && FS.slp.length) return slpOn(n) ? '#017de4' : 'rgba(1,125,228,.15)'
+  return 'rgba(1,125,228,.55)'
+}
+function slpWidth(n) { return slpOn(n) ? 2 : 1.2 }
+// 只画选中的行政区（底图已有区界），没选时不出任何行政区图层
+const admSel = computed(() => (FS.dim === 'adm' ? FS.adm.filter((n) => DIST[n]) : []))
+
+const distPath = {}
+for (const [name, ring] of Object.entries(DIST)) distPath[name] = pathOf(ring)
+
+function nf(v, d = 2) { return (v == null || isNaN(v)) ? '—' : Number(v).toFixed(d) }
+// 图上站点统一配色，不再按流量正负 / 超警戒区分
+const DOT_COLOR = '#017de4'
+
+/* ================= 筛选 ================= */
+const ADMS = Array.from(new Set(SZ.map((s) => s.dist).filter(Boolean))).sort()
+
+const DIMS = [{ k: 'adm', n: '行政区' }, { k: 'slp', n: '水利片区' }]
+const FS = reactive({ dim: 'adm', adm: [], slp: [], kw: '', sel: null })
+
+// 行政区与水利片区互斥：切换维度时清空另一维度的选择
+function setDim(k) {
+  if (FS.dim === k) return
+  FS.dim = k
+  FS.adm.splice(0)
+  FS.slp.splice(0)
+  openMs.value = null
+}
+
+const curSel = computed(() => (FS.dim === 'adm' ? FS.adm : FS.slp))
+const dimOptions = computed(() => (FS.dim === 'adm' ? ADMS : SLPS.value))
+const dimBtnText = computed(() => {
+  const n = curSel.value.length
+  return n ? `已选 ${n} 项` : (FS.dim === 'adm' ? '全部行政区' : '全部水利片区')
+})
+
+const visible = computed(() => STN.filter((s) => {
+  if (FS.dim === 'adm' && FS.adm.length && !FS.adm.includes(s.dist)) return false
+  if (FS.dim === 'slp' && FS.slp.length && !FS.slp.includes(slpIndex.value[s.nm])) return false
+  if (FS.kw) {
+    const k = FS.kw.toLowerCase()
+    const hit = s.nm.toLowerCase().includes(k)
+      || String(s.code).includes(k)
+      || (s.riv || '').toLowerCase().includes(k)
+    if (!hit) return false
+  }
+  return true
+}))
+
+// 地图上只画有坐标的站（外省市边界站无经纬度，仅在明细表中列出）
+const mapStations = computed(() => visible.value.filter((s) => s.lon != null && s.lat != null))
+
+// 站点图形按 k 反向缩放：放大地图时，站点/文字在屏幕上保持同样大小，密集区标签自动散开
+// 估算 8px 字号下的文字宽度（中文按 8px、西文按 4.6px），用于标签避让
+function textW(s) {
+  let w = 0
+  for (const ch of s) w += ch.charCodeAt(0) > 255 ? 8 : 4.6
+  return w
+}
+
+const rendered = computed(() => {
+  const k = view.w / MW
+  // 概览时只标站名，放大到 1.2 倍以内才带流量，避免标签过宽糊满地图
+  const showVal = view.w <= MW * 1.2
+  const placed = []
+  const tryPlace = (x, y, w, h, skip) => {
+    for (let i = 0; i < placed.length; i++) {
+      if (i === skip) continue
+      const r = placed[i]
+      if (x < r.x + r.w + 5 && x + w + 5 > r.x && y < r.y + r.h + 4 && y + h + 4 > r.y) return false
+    }
+    placed.push({ x, y, w, h }); return true
+  }
+  const pts = mapStations.value.map((st) => {
+    const [x, y] = proj(st.lon, st.lat)
+    return { st, x, y }
+  })
+  // 先把所有站点占位，标签不压别的站点（半径随 k 换算到 svg 坐标）
+  for (const p of pts) {
+    const rr = (p.st.q == null ? 2.6 : 3.2) + 5
+    placed.push({ x: p.x - rr * k, y: p.y - rr * k, w: rr * 2 * k, h: rr * 2 * k })
+  }
+  return pts.map(({ st, x, y }, idx) => {
+    const c = DOT_COLOR
+    const on = FS.sel === st.nm
+    const r = on ? 5 : (st.q == null ? 2.6 : 3.2)
+    const arrowRot = st.deg != null ? st.deg : null
+
+    const nmw = textW(st.nm) + 7
+    const qt = showVal && st.q != null ? nf(st.q, st.q % 1 ? 2 : 0) : null
+    const qw = qt != null ? textW(qt + ' m³/s') + 7 : 0
+    const w = Math.max(nmw, qw)
+    const h = qt != null ? 23 : 13
+    // 碰撞检测用「视觉坐标」（已乘 k）
+    const bw = w * k
+    const bh = h * k
+    const q = (ox, oy) => [x + ox * k, y + oy * k]
+    // 只在右/左各两个候选位找位置；放不下就不标，避免概览时堆成一堵标签墙
+    const cands = (on
+      ? [q(9, -16), q(-w - 9, -16), q(9, -3), q(-w - 9, -3)]
+      : [q(7, -15), q(-w - 7, -15), q(7, 5), q(-w - 7, 5)])
+    let pos = null
+    for (const cc of cands) { if (tryPlace(cc[0], cc[1], bw, bh, idx)) { pos = cc; break } }
+    if (!pos && on) pos = q(9, -16)
+    // 视觉坐标 → 绘制坐标（group 内已按 k 缩放）
+    const label = pos ? [x + (pos[0] - x) / k, y + (pos[1] - y) / k] : null
+    const qc = '#0b6bb5'
+    return { st, x, y, c, r, on, arrowRot, qt, qc, w, h, label }
+  })
+})
+
+// 筛选下拉
+const openMs = ref(null)
+function toggleMs(k) { openMs.value = openMs.value === k ? null : k }
+function toggleFilter(v) {
+  const arr = curSel.value
+  const i = arr.indexOf(v)
+  if (i >= 0) arr.splice(i, 1)
+  else arr.push(v)
+}
+
+function select(nm) {
+  if (drag.moved) { drag.moved = false; return }
+  FS.sel = FS.sel === nm ? null : nm
+}
+
+function exportCsv() {
+  const head = ['序号', '断面名称', '流量（m³/s）', '所在河道']
+  const lines = visible.value.map((s, i) => [
+    i + 1, s.nm, s.q == null ? '—' : nf(s.q, 2), s.riv || '—'
+  ])
+  downloadCsv('主要断面流量实时感知明细.csv', head, lines)
+}
+
+// 关闭下拉
+function onDocClick(e) {
+  if (!e.target.closest('.ms')) openMs.value = null
+}
+
+let ro = null
+onMounted(async () => {
+  document.addEventListener('click', onDocClick)
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  measure()
+  if (window.ResizeObserver && mapRef.value) {
+    ro = new ResizeObserver(measure)
+    ro.observe(mapRef.value)
+  }
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}data/slp.json`)
+    if (res.ok) SLP.value = await res.json()
+  } catch (e) {
+    // 片区边界不可用时，地图与其余筛选照常工作
+  }
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick)
+  window.removeEventListener('mousemove', onMove)
+  window.removeEventListener('mouseup', onUp)
+  if (ro) ro.disconnect()
+})
+
+// 悬停提示
+const tip = reactive({ show: false, left: 0, top: 0, st: null })
+function showTip(st, e) {
+  tip.st = st
+  tip.show = true
+  const wr = mapWrap.value.getBoundingClientRect()
+  let left = e.clientX - wr.left + 14
+  let top = e.clientY - wr.top + 12
+  if (left + 230 > wr.width) left = e.clientX - wr.left - 230
+  tip.left = left
+  tip.top = top
+}
+function hideTip() { tip.show = false }
+</script>
