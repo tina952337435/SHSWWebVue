@@ -235,10 +235,15 @@ export function calcSingleFlux(factor, { year = 2025, scale = 'year', period = 0
     }, 0))
     const inFlux = round1(flux * GROUP_IN_RATIO[g])
     const outFlux = round1(flux - inFlux)
+    // 水量同样按入/出占比拆分（浓度两向一致，故与通量拆分的比例相同）
+    const inWater = round2(water * GROUP_IN_RATIO[g])
+    const outWater = round2(water - inWater)
     return {
       k: g,
       name: GROUP_NAME[g],
       water,
+      inWater,
+      outWater,
       flux,
       conc: round2(flux / (water * 100)),
       inFlux,
@@ -249,7 +254,9 @@ export function calcSingleFlux(factor, { year = 2025, scale = 'year', period = 0
     flux: round1(groups.reduce((a, g) => a + g.flux, 0)),
     inFlux: round1(groups.reduce((a, g) => a + g.inFlux, 0)),
     outFlux: round1(groups.reduce((a, g) => a + g.outFlux, 0)),
-    water: round2(groups.reduce((a, g) => a + g.water, 0))
+    water: round2(groups.reduce((a, g) => a + g.water, 0)),
+    inWater: round2(groups.reduce((a, g) => a + g.inWater, 0)),
+    outWater: round2(groups.reduce((a, g) => a + g.outWater, 0))
   }
   return { factor: f, groups, total, year, scale, period }
 }

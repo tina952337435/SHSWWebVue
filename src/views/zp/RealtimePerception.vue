@@ -9,6 +9,7 @@
         :style="{ cursor: dragging ? 'grabbing' : 'grab' }"
         @wheel.prevent="onWheel"
         @mousedown.prevent="onDown"
+        @click="onMapClick"
         @dblclick="resetView"
       >
         <defs>
@@ -45,8 +46,9 @@
             stroke-linejoin="round"
             vector-effect="non-scaling-stroke"
           />
-          <!-- 边界流动虚线：让片区轮廓有“水在流”的感觉 -->
+          <!-- 边界流动虚线：只在选中该片区时出现，避免满图虚线 -->
           <path
+            v-if="slpOn(p.n)"
             :d="slpPath[p.n]"
             fill="none"
             stroke="#4aa9f0"
@@ -54,7 +56,6 @@
             stroke-linejoin="round"
             vector-effect="non-scaling-stroke"
             class="slp-flow"
-            :style="{ opacity: slpOn(p.n) ? 0.95 : 0.3 }"
           />
         </g>
 
@@ -92,7 +93,7 @@
           :transform="`translate(${d.x.toFixed(1)} ${d.y.toFixed(1)}) scale(${scaleK}) translate(${(-d.x).toFixed(1)} ${(-d.y).toFixed(1)})`"
           @mouseenter="showTip(d.st, $event)"
           @mouseleave="hideTip"
-          @click="select(d.st.nm)"
+          @click.stop="select(d.st.nm)"
         >
           <circle :cx="d.x.toFixed(1)" :cy="d.y.toFixed(1)" :r="d.r + 8" fill="transparent" />
 
@@ -152,12 +153,15 @@
         </g>
       </svg>
 
-      <!-- 图例 -->
-      <div class="map-legend">
-        <div class="tl">图例</div>
-        <div class="row"><i></i> 自有站</div>
-        <div class="row"><i class="sh"></i> 共享站（外省市边界站）</div>
-        <div class="row"><i class="rg"></i> 水利片区</div>
+      <!-- 图例：默认收起，点击展开 -->
+      <div class="map-legend" :class="{ open: legendOpen }" @click.stop="legendOpen = !legendOpen">
+        <div class="tl">图例 <span class="ar">{{ legendOpen ? '▾' : '▸' }}</span></div>
+        <div v-show="legendOpen" class="lg-body">
+          <div class="row"><i></i> 自有站</div>
+          <div class="row"><i class="sh"></i> 共享站（外省市边界站）</div>
+          <div class="row"><i class="rg"></i> 水利片区</div>
+          <div class="row"><i class="arw"></i> 流向</div>
+        </div>
       </div>
 
       <!-- 指北针 / 比例尺 -->
@@ -249,7 +253,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(s, i) in visible" :key="s.nm" :class="{ sel: FS.sel === s.nm }" @click="select(s.nm)">
+              <tr v-for="(s, i) in visible" :key="s.nm" :class="{ sel: FS.sel === s.nm }" @click="selectRow(s.nm)">
                 <td class="muted">{{ i + 1 }}</td>
                 <td><b>{{ s.nm }}</b></td>
                 <td class="num">{{ s.q == null ? '—' : nf(s.q, 2) }}</td>
@@ -331,6 +335,8 @@ const mapRef = ref(null)
 const mapWrap = ref(null)
 // 右侧明细表默认收起，只留地图；点地图右边缘的小标签拉出/收起
 const sideOpen = ref(false)
+// 图例默认收起，避免左下角常驻一大块白底
+const legendOpen = ref(false)
 const view = reactive({ x: 0, y: 0, w: MW, h: MH })
 const vb = computed(() => `${view.x.toFixed(1)} ${view.y.toFixed(1)} ${view.w.toFixed(1)} ${view.h.toFixed(1)}`)
 const scaleK = computed(() => Number((view.w / MW).toFixed(4)))
@@ -367,7 +373,7 @@ let fitted = false
 // 自适应：宽度取数据范围，高度按容器比例；容器更扁时反过来
 function fitView() {
   const ar = viewAR()
-  const pad = 1.06          // 默认视野留一点边，别把市域顶满
+  const pad = 0.9           // 默认视野比数据范围略小，等于往里放大一级
   let w = MW * pad
   let h = w / ar
   if (h < MH * pad) { h = MH * pad; w = h * ar }
@@ -572,12 +578,14 @@ const slpIndex = computed(() => {
 })
 const SLPS = computed(() => SLP.value.map((p) => p.n))
 
-// 片区名（互相压盖的自动隐藏，放大后逐步出现）
+// 片区名：默认不显示（满图片区名也是杂乱的来源之一），放大到约 2 倍或选中该片区时才出现
 const slpLabels = computed(() => {
   const k = view.w / MW
+  const zoomed = view.w <= MW * 0.5
   const placed = []
   const out = []
   for (const p of SLP.value) {
+    if (!zoomed && !slpOn(p.n)) continue
     const n = p.r.length - 1
     let sx = 0, sy = 0
     for (let i = 0; i < n; i++) { sx += p.r[i][0]; sy += p.r[i][1] }
@@ -602,10 +610,10 @@ function slpFill(n) {
   return 'transparent'
 }
 function slpStroke(n) {
-  if (FS.dim === 'slp' && FS.slp.length) return slpOn(n) ? '#017de4' : 'rgba(1,125,228,.15)'
-  return 'rgba(1,125,228,.55)'
+  if (FS.dim === 'slp' && FS.slp.length) return slpOn(n) ? '#017de4' : 'rgba(1,125,228,.12)'
+  return 'rgba(1,125,228,.26)'
 }
-function slpWidth(n) { return slpOn(n) ? 2 : 1.2 }
+function slpWidth(n) { return slpOn(n) ? 1.8 : 1 }
 // 只画选中的行政区（底图已有区界），没选时不出任何行政区图层
 const admSel = computed(() => (FS.dim === 'adm' ? FS.adm.filter((n) => DIST[n]) : []))
 
@@ -635,7 +643,7 @@ const curSel = computed(() => (FS.dim === 'adm' ? FS.adm : FS.slp))
 const dimOptions = computed(() => (FS.dim === 'adm' ? ADMS : SLPS.value))
 const dimBtnText = computed(() => {
   const n = curSel.value.length
-  return n ? `已选 ${n} 项` : (FS.dim === 'adm' ? '全部行政区' : '全部水利片区')
+  return n ? `已选 ${n} 项` : (FS.dim === 'adm' ? '全部' : '全部')
 })
 
 const visible = computed(() => STN.filter((s) => {
@@ -698,16 +706,27 @@ const rendered = computed(() => {
     // 碰撞检测用「视觉坐标」（已乘 k）
     const bw = w * k
     const bh = h * k
-    const q = (ox, oy) => [x + ox * k, y + oy * k]
-    // 只在右/左各两个候选位找位置；放不下就不标，避免概览时堆成一堵标签墙
-    const cands = (on
-      ? [q(9, -16), q(-w - 9, -16), q(9, -3), q(-w - 9, -3)]
-      : [q(7, -15), q(-w - 7, -15), q(7, 5), q(-w - 7, 5)])
+    // 四个对角候选位（右上/左上/右下/左下）；选中站点圆点更大，标签再外移一点
+    const g = on ? 2 : 0
+    const cands = [
+      { ox: 7 + g, oy: -15 - g, v: [1, -1] },
+      { ox: -w - 7 - g, oy: -15 - g, v: [-1, -1] },
+      { ox: 7 + g, oy: 5 + g, v: [1, 1] },
+      { ox: -w - 7 - g, oy: 5 + g, v: [-1, 1] }
+    ]
+    // 有流向箭头的站：标签优先放箭头反方向，避免盖住箭头
+    if (arrowRot != null) {
+      const rad = (arrowRot * Math.PI) / 180
+      const ax = Math.sin(rad), ay = -Math.cos(rad)
+      cands.sort((a, b) => (a.v[0] * ax + a.v[1] * ay) - (b.v[0] * ax + b.v[1] * ay))
+    }
     let pos = null
-    for (const cc of cands) { if (tryPlace(cc[0], cc[1], bw, bh, idx)) { pos = cc; break } }
-    if (!pos && on) pos = q(9, -16)
-    // 视觉坐标 → 绘制坐标（group 内已按 k 缩放）
-    const label = pos ? [x + (pos[0] - x) / k, y + (pos[1] - y) / k] : null
+    for (const c of cands) {
+      if (tryPlace(x + c.ox * k, y + c.oy * k, bw, bh, idx)) { pos = c; break }
+    }
+    if (!pos && on) pos = cands[0]
+    // 绘制坐标 = 站点 + 标签偏移（outer group 内会再按 k 缩放，屏幕偏移即 ox/oy）
+    const label = pos ? [x + pos.ox, y + pos.oy] : null
     const qc = '#0b6bb5'
     return { st, x, y, c, r, on, arrowRot, qt, qc, w, h, label }
   })
@@ -723,9 +742,40 @@ function toggleFilter(v) {
   else arr.push(v)
 }
 
+// 选中高亮（放大 + 脉冲圈 + 表格行）只保留 SEL_MS，几秒后自动消失；改时长只改这一处
+const SEL_MS = 3000
+let selTimer = null
+function clearSel() {
+  if (selTimer) { clearTimeout(selTimer); selTimer = null }
+  FS.sel = null
+}
+function setSel(nm) {
+  if (selTimer) { clearTimeout(selTimer); selTimer = null }
+  FS.sel = FS.sel === nm ? null : nm
+  if (FS.sel != null) {
+    selTimer = setTimeout(() => { FS.sel = null; selTimer = null }, SEL_MS)
+  }
+}
+
 function select(nm) {
   if (drag.moved) { drag.moved = false; return }
-  FS.sel = FS.sel === nm ? null : nm
+  setSel(nm)
+}
+
+// 点击地图空白处立即取消选中；拖动地图结束后的那次 click 不处理
+function onMapClick() {
+  if (drag.moved) { drag.moved = false; return }
+  clearSel()
+}
+
+// 表格行点击不受地图拖拽状态影响（否则拖过地图后第一次点表格会被吞掉）
+function selectRow(nm) {
+  setSel(nm)
+}
+
+// Esc 立即取消选中
+function onKey(e) {
+  if (e.key === 'Escape') clearSel()
 }
 
 function exportCsv() {
@@ -746,6 +796,7 @@ onMounted(async () => {
   document.addEventListener('click', onDocClick)
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
+  window.addEventListener('keydown', onKey)
   measure()
   if (window.ResizeObserver && mapRef.value) {
     ro = new ResizeObserver(measure)
@@ -762,6 +813,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   window.removeEventListener('mousemove', onMove)
   window.removeEventListener('mouseup', onUp)
+  window.removeEventListener('keydown', onKey)
+  if (selTimer) { clearTimeout(selTimer); selTimer = null }
   if (ro) ro.disconnect()
 })
 

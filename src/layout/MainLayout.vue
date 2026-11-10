@@ -13,7 +13,7 @@
           v-for="m in MODULES"
           :key="m.k"
           :class="{ on: activeModule === m.k }"
-          @click="goModule(m.k)"
+          @click="goNav(m)"
         >
           <el-icon class="ni"><component :is="ICONS[m.k]" /></el-icon>
           <span>{{ m.n }}</span>
@@ -82,7 +82,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled, Connection, Odometer, Cloudy, DataAnalysis, Histogram, Document,
-  User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts
+  Monitor, User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts
 } from '@element-plus/icons-vue'
 import { SYS_TITLE, MODULES, SUBMENUS } from '@/config/menu'
 
@@ -90,6 +90,7 @@ import { SYS_TITLE, MODULES, SUBMENUS } from '@/config/menu'
 const logoUrl = `${import.meta.env.BASE_URL}images/logo.png`
 
 const ICONS = {
+  jsc: Monitor,
   home: HomeFilled,
   zw: Connection,
   swjc: Odometer,
@@ -116,6 +117,12 @@ function goModule(k) {
   if (k === 'home') router.push('/home')
   else if (k === 'zp') router.push('/zp/rt')
   else router.push(`/${k}`)
+}
+
+// 顶栏导航：带 href 的项（如驾驶舱）走外链，其余走内部路由
+function goNav(m) {
+  if (m.href) { window.open(m.href, '_blank', 'noopener,noreferrer'); return }
+  goModule(m.k)
 }
 
 function goSub(k) {

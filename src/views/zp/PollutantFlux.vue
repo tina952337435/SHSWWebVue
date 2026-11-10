@@ -84,11 +84,17 @@
             <table class="dt">
               <thead>
                 <tr>
-                  <th style="width:60px">序号</th>
-                  <th>分析对象</th>
-                  <th>水质指标（平均值，mg/L）</th>
-                  <th>水量（亿 m³）</th>
-                  <th>通量（t）</th>
+                  <th rowspan="2" style="width:60px">序号</th>
+                  <th rowspan="2">分析对象</th>
+                  <th rowspan="2">水质指标（平均值，mg/L）</th>
+                  <th colspan="2">水量（亿 m³）</th>
+                  <th colspan="2">通量（t）</th>
+                </tr>
+                <tr>
+                  <th>出水量</th>
+                  <th>入水量</th>
+                  <th>出通量</th>
+                  <th>入通量</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,8 +102,10 @@
                   <td>{{ i + 1 }}</td>
                   <td>{{ g.name }}</td>
                   <td class="num">{{ g.conc.toFixed(2) }}</td>
-                  <td class="num">{{ g.water.toFixed(1) }}</td>
-                  <td class="num">{{ fmt(g.flux) }}</td>
+                  <td class="num">{{ g.outWater.toFixed(2) }}</td>
+                  <td class="num">{{ g.inWater.toFixed(2) }}</td>
+                  <td class="num">{{ fmt(g.outFlux) }}</td>
+                  <td class="num">{{ fmt(g.inFlux) }}</td>
                 </tr>
               </tbody>
               <tfoot>
@@ -105,8 +113,10 @@
                   <td>—</td>
                   <td>合计</td>
                   <td class="num">—</td>
-                  <td class="num">{{ single.total.water.toFixed(1) }}</td>
-                  <td class="num">{{ fmt(single.total.flux) }}</td>
+                  <td class="num">{{ single.total.outWater.toFixed(2) }}</td>
+                  <td class="num">{{ single.total.inWater.toFixed(2) }}</td>
+                  <td class="num">{{ fmt(single.total.outFlux) }}</td>
+                  <td class="num">{{ fmt(single.total.inFlux) }}</td>
                 </tr>
               </tfoot>
             </table>
@@ -205,8 +215,8 @@
               <tr>
                 <th style="width: 56px">序号</th>
                 <th style="width: 140px">时间</th>
-                <th>水量（亿 m³）</th>
-                <th v-for="f in multi.factors" :key="f.k">{{ f.n }}（t）</th>
+                <th>{{ dirLabel }}水量（亿 m³）</th>
+                <th v-for="f in multi.factors" :key="f.k">{{ f.n }}{{ dirLabel }}通量（t）</th>
               </tr>
             </thead>
             <tbody>
@@ -292,10 +302,11 @@ const ratioByKey = computed(() => {
   }
   return map
 })
-// 期间水量 = 年水量 × 期间月数 / 12
+// 期间水量 = 年水量 × 期间月数 / 12，再按当前方向折算（出 / 入）
 function periodWater(p) {
   const n = p.months && p.months.length ? p.months.length : 12
-  return multi.value.water * (n / 12)
+  const wr = dir.value === 'out' ? 1 - multi.value.inRatio : multi.value.inRatio
+  return multi.value.water * (n / 12) * wr
 }
 function periodFlux(p, k) {
   return (p.values[k] || 0) * (ratioByKey.value[k] || 0)
@@ -417,9 +428,13 @@ const inPieOption = computed(() => pieOption(
 
 function exportSingleCsv() {
   const s = single.value
-  const head = ['序号', '分析对象', '水质指标（平均值，mg/L）', '水量（亿 m³）', '通量（t）']
-  const lines = s.groups.map((g, i) => [i + 1, g.name, g.conc.toFixed(2), g.water.toFixed(1), g.flux.toFixed(1)])
-  lines.push(['—', '合计', '—', s.total.water.toFixed(1), s.total.flux.toFixed(1)])
+  const head = ['序号', '分析对象', '水质指标（平均值，mg/L）', '出水量（亿 m³）', '入水量（亿 m³）', '出通量（t）', '入通量（t）']
+  const lines = s.groups.map((g, i) => [
+    i + 1, g.name, g.conc.toFixed(2),
+    g.outWater.toFixed(2), g.inWater.toFixed(2),
+    g.outFlux.toFixed(1), g.inFlux.toFixed(1)
+  ])
+  lines.push(['—', '合计', '—', s.total.outWater.toFixed(2), s.total.inWater.toFixed(2), s.total.outFlux.toFixed(1), s.total.inFlux.toFixed(1)])
   downloadCsv(`省市边界污染物通量_单指标_${s.factor.n}.csv`, head, lines)
   ElMessage.success('报表已导出')
 }
@@ -568,7 +583,7 @@ function exportCsv() {
     return
   }
   const num = (v) => (Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2))
-  const head = ['序号', '时间', '水量（亿 m³）', ...r.factors.map((f) => `${f.n}${dirLabel.value}通量（t）`)]
+  const head = ['序号', '时间', `${dirLabel.value}水量（亿 m³）`, ...r.factors.map((f) => `${f.n}${dirLabel.value}通量（t）`)]
   const lines = r.periods.map((p, i) => [
     i + 1, p.label, periodWater(p).toFixed(2),
     ...r.factors.map((f) => num(periodFlux(p, f.k)))

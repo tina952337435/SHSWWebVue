@@ -1,0 +1,94 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>水资源评价 · 设计讲解稿（产品汇报版）</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<style>
+  @page { size: A4; margin: 2cm 2.2cm; }
+  body { font-family: "Microsoft YaHei", "微软雅黑", sans-serif; font-size: 10.5pt; line-height: 1.65; color: #1c2a38; margin: 0; }
+  h1 { font-size: 18pt; color: #0b4c86; margin: 0 0 4pt; letter-spacing: 1px; }
+  .sub { font-size: 9.5pt; color: #5e7183; margin: 0 0 12pt; }
+  h2 { font-size: 12.5pt; color: #0b4c86; margin: 14pt 0 5pt; padding-left: 7pt; border-left: 3pt solid #017de4; page-break-after: avoid; }
+  p { margin: 0 0 4pt; }
+  .lab { display: inline-block; color: #0b6bb5; font-weight: bold; margin-right: 2pt; }
+  .tip { background: #f2f7fc; border: 1px solid #d5e5f5; padding: 6pt 9pt; margin: 0 0 10pt; font-size: 9.5pt; color: #3c5064; }
+  .quote { background: #fbfaf5; border-left: 3pt solid #d9b44a; padding: 6pt 9pt; margin: 4pt 0 8pt; color: #3c3424; }
+  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; margin: 5pt 0 8pt; }
+  th, td { border: 1px solid #c6d6e4; padding: 3.5pt 6pt; text-align: left; }
+  th { background: #e8f1fa; color: #0b4c86; font-weight: bold; }
+  ol { margin: 4pt 0 8pt; padding-left: 18pt; }
+  li { margin-bottom: 3pt; }
+</style>
+</head>
+<body>
+
+<h1>水资源评价 · 设计讲解稿</h1>
+<p class="sub">产品汇报版 · 按「为什么做 → 怎么设计 → 演示什么 → 请确认」四步讲</p>
+
+<div class="tip">
+这是根据我们自己的理解做出的设计稿，讲给客户听，目标是让对方看懂设计思路并提出修改意见，不是最终方案。
+</div>
+
+<h2>开场（30 秒）</h2>
+<div class="quote">"今天汇报的是水资源评价模块的设计稿。这些页面是我们根据前期对业务的理解先做出来的，目的是把功能思路和交互方式摆出来，和大家对齐；具体指标、数据来源和细节，会后按大家的意见再调整。"</div>
+<p><span class="lab">主线一句话：</span>从一张图看现状，到算清进出水量，再看水质和生态，最后形成月报。</p>
+
+<h2>1. 主要断面流量实时感知</h2>
+<p><span class="lab">为什么做：</span>先解决"全市水情在哪看"的问题，这个页面是整个模块的入口。</p>
+<p><span class="lab">怎么设计：</span>默认只放地图，断面和流向箭头一眼看清；明细表收到右侧，需要时再拉出来——一上来就给表格，信息太满。</p>
+<p><span class="lab">演示：</span>指地图讲流向（咸潮期箭头会反）；悬停松浦大桥看实时数据；拉出明细看统计和筛选；按片区筛一次。</p>
+<p><span class="lab">请确认：</span>断面选取范围是否合适？默认要展示哪几个指标（流量 / 水位 / 警戒）？</p>
+
+<h2>2. 历年水资源量查询</h2>
+<p><span class="lab">为什么做：</span>判断今年是丰是枯，需要多年数据做参照。</p>
+<p><span class="lab">怎么设计：</span>一次只看一个指标，避免多指标挤在一张图上；柱子上加多年平均线，高低一眼可比。</p>
+<p><span class="lab">演示：</span>切换三个指标；看平均线；切页签看不同维度。</p>
+<p><span class="lab">请确认：</span>年份范围、维度划分、多年平均的口径，是否按现有年报来？</p>
+
+<h2>3. 出入境水资源量计算</h2>
+<p><span class="lab">为什么做：</span>回答"上海一年从外面进来多少水、又出去多少水"。</p>
+<p><span class="lab">怎么设计：</span>左侧按边界分组选断面，右侧净水量 = 出 − 入，柱状图正负一眼分辨；粒度可切日 / 旬 / 月 / 年。</p>
+<p><span class="lab">演示：</span>默认两个断面 → 看全年 → 切到月，讲"只改粒度、不改时间区间"。</p>
+<p><span class="lab">请确认：</span>边界断面清单是否完整？净水量是按站求和，还是先汇总再相减？</p>
+
+<h2>4. 省市边界污染物通量分析</h2>
+<p><span class="lab">为什么做：</span>光看水量不够，还要看水质，通量把"水量 × 浓度"合成一个可比的量。</p>
+<p><span class="lab">怎么设计：</span>单指标看总量构成，出、入两张饼图分开；多指标看单个断面的因子随时间怎么变；表格明确分出 / 入，不留歧义。</p>
+<p><span class="lab">演示：</span>切一个因子；对比两张饼图；切多指标看轮换和过程线。</p>
+<p><span class="lab">请确认：</span>因子清单和分组方式？出 / 入比例的正式口径怎么定？</p>
+
+<h2>5. 生态流量监测预警</h2>
+<p><span class="lab">为什么做：</span>河湖生态用水有没有被挤占，需要持续盯着，不能等出问题再查。</p>
+<p><span class="lab">怎么设计：</span>总览看今天谁不达标；统计看一段时间的趋势；记录看历史；规则让业务人员自己调阈值，不用改代码。</p>
+<p><span class="lab">演示：</span>总览 → 点一个断面看统计 → 现场改一条规则。</p>
+<p><span class="lab">请确认：</span>考核断面范围？目标值从哪来？预警分级按什么标准？</p>
+
+<h2>6. 生态流量月报</h2>
+<p><span class="lab">为什么做：</span>监测结果最终要形成能上报、能存档的月报。</p>
+<p><span class="lab">怎么设计：</span>选月份一键生成四段式报告，可预览、下载、存档；月报管理统一查历史。</p>
+<p><span class="lab">演示：</span>生成 → 预览 → 下载。</p>
+<p><span class="lab">请确认：</span>报告模板和四段结构，是否符合公文要求？</p>
+
+<h2>收尾（30 秒）</h2>
+<div class="quote">"今天主要想对齐三件事：功能范围、页面组织方式、指标口径。认可的部分我们保留，有出入的地方会后逐条改设计，不影响后续开发。"</div>
+
+<h2>汇报节奏</h2>
+<table>
+  <tr><th style="width:24%">段落</th><th style="width:14%">时长</th><th>目的</th></tr>
+  <tr><td>开场定调</td><td>30s</td><td>明确这是设计稿，不是最终方案</td></tr>
+  <tr><td>功能 1、3、4</td><td>5 min</td><td>讲清"一张图 → 算水量 → 看水质"主线</td></tr>
+  <tr><td>功能 2、5、6</td><td>3.5 min</td><td>补齐历年、生态、月报</td></tr>
+  <tr><td>收尾</td><td>30s</td><td>收口到待确认事项</td></tr>
+</table>
+
+<h2>三条现场原则</h2>
+<ol>
+  <li><b>先说为什么，再讲怎么做</b>：每个功能开口先讲业务问题，客户才听得进设计。</li>
+  <li><b>不纠结数据真假</b>：被问到就说"演示数据，正式版接实时数据"，不要把时间花在解释数值上。</li>
+  <li><b>客户提意见先记下</b>：不当场争对错，回一句"这个记下来，会后按您的意见调整"，把会议目标守住。</li>
+</ol>
+
+</body>
+</html>

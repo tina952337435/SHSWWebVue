@@ -7,14 +7,14 @@
         本批次聚焦【水资源评价】模块，完成「主要断面流量实时感知」「历年水资源量查询」两项功能界面设计。
       </p>
       <div class="tags">
-        <span v-for="m in MODULES" :key="m.k">{{ m.n }}</span>
+        <span v-for="m in modules" :key="m.k">{{ m.n }}</span>
       </div>
     </div>
 
     <h3>业务模块</h3>
     <div class="mod-grid">
       <div
-        v-for="m in MODULES"
+        v-for="m in modules"
         :key="m.k"
         class="mod-card"
         :class="{ on: m.k === 'zp' }"
@@ -29,10 +29,14 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { SYS_TITLE, MODULES } from '@/config/menu'
 
 const router = useRouter()
+
+// 业务模块：过滤掉外链入口（如驾驶舱），首页只展示内部模块
+const modules = computed(() => MODULES.filter((m) => !m.href))
 
 function go(k) {
   if (k === 'home') router.push('/home')
