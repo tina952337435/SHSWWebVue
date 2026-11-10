@@ -93,7 +93,7 @@
           :transform="`translate(${d.x.toFixed(1)} ${d.y.toFixed(1)}) scale(${scaleK}) translate(${(-d.x).toFixed(1)} ${(-d.y).toFixed(1)})`"
           @mouseenter="showTip(d.st, $event)"
           @mouseleave="hideTip"
-          @click.stop="select(d.st.nm)"
+          @click.stop="openProc(d.st)"
         >
           <circle :cx="d.x.toFixed(1)" :cy="d.y.toFixed(1)" :r="d.r + 8" fill="transparent" />
 
@@ -180,6 +180,58 @@
         </template>
         流向 <b>{{ tip.st.dir || '—' }}</b>{{ tip.st.dist ? '　' + tip.st.dist : '' }}<br />
         水利片区 <b>{{ slpIndex[tip.st.nm] || '—' }}</b>
+      </div>
+
+      <!-- 点击监测点：流量过程弹窗 -->
+      <div v-if="proc.show" class="proc-mask" @click.self="closeProc">
+        <div class="proc-pop" @click.stop>
+          <div class="proc-hd">
+            <div class="proc-title">
+              <b>{{ proc.st.nm }}</b>
+              <span>{{ proc.st.riv || '—' }} · {{ proc.st.code }}</span>
+            </div>
+            <button class="proc-x" type="button" title="关闭" @click="closeProc">×</button>
+          </div>
+
+          <div class="proc-tabs3">
+            <span
+              v-for="m in PROC_METRICS"
+              :key="m.k"
+              :class="{ on: proc.metric === m.k }"
+              @click="proc.metric = m.k"
+            >{{ m.n }}</span>
+          </div>
+
+          <div class="proc-cond">
+            <label>
+              开始
+              <input v-model="proc.start" type="datetime-local" @change="onTimeChange('start')" />
+            </label>
+            <label>
+              结束
+              <input v-model="proc.end" type="datetime-local" @change="onTimeChange('end')" />
+            </label>
+            <div class="sc-tabs proc-step">
+              <span
+                v-for="s in PROC_STEPS"
+                :key="s.k"
+                class="sc-item"
+                :class="{ on: proc.step === s.k }"
+                @click="setStep(s.k)"
+              >{{ s.n }}</span>
+            </div>
+          </div>
+
+          <BarChart v-if="procData" :option="procOption" :height="240" />
+          <div v-else class="proc-empty">{{ procEmptyText }}</div>
+
+          <div class="proc-foot">
+            <span v-if="procData">
+              均值 {{ nf(procData.stats.avg, procMetric.dec) }}　最大 {{ nf(procData.stats.max, procMetric.dec) }}　最小 {{ nf(procData.stats.min, procMetric.dec) }}　最新 {{ nf(procData.stats.last, procMetric.dec) }} {{ procMetric.unit }}
+            </span>
+            <span class="tm">监测时间 {{ proc.st.tm || (SZ[0] && SZ[0].tm) }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- 右侧明细表伸缩按钮 -->
@@ -272,6 +324,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { STN } from '@/data/stations'
 import { DIST } from '@/data/districts'
 import ExportButton from '@/components/ExportButton.vue'
+import BarChart from '@/components/BarChart.vue'
 import { downloadCsv } from '@/utils/csv'
 
 const SZ = STN.filter((s) => s.sz)
@@ -757,10 +810,299 @@ function setSel(nm) {
   }
 }
 
-function select(nm) {
-  if (drag.moved) { drag.moved = false; return }
-  setSel(nm)
+/* ================= 点击监测点：流量过程弹窗 ================= */
+// maxDays 限制单次查询跨度，避免 5 分钟粒度一次取太多点
+const PROC_STEPS = [
+  { k: '5min', n: '5分钟', step: 5 * 60 * 1000, maxDays: 7 },
+  { k: 'day', n: '日均', step: 24 * 60 * 60 * 1000, maxDays: 365 * 5 }
+]
+// 过程线页签：流量 / 水位 / 降雨
+const PROC_METRICS = [
+  { k: 'q', n: '流量过程', s: '流量', unit: 'm³/s', color: '#017de4', dec: 2 },
+  { k: 'z', n: '水位过程', s: '水位', unit: 'm', color: '#26a869', dec: 2 },
+  { k: 'rain', n: '降雨过程', s: '降雨', unit: 'mm', color: '#16b8b0', dec: 1 }
+]
+const proc = reactive({ show: false, st: null, start: '', end: '', step: '5min', metric: 'q' })
+
+function p2(v) { return String(v).padStart(2, '0') }
+// datetime-local 需要 YYYY-MM-DDTHH:mm
+function toInput(d) {
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
+// 以监测时间作为默认结束时间
+function procNow() {
+  const st = proc.st
+  const tm = (st && st.tm) || (SZ[0] && SZ[0].tm)
+  const d = tm ? new Date(String(tm).replace(' ', 'T')) : new Date()
+  return isNaN(d.getTime()) ? new Date() : d
+}
+const procStep = computed(() => PROC_STEPS.find((s) => s.k === proc.step) || PROC_STEPS[0])
+// 起止时间 → 毫秒；不合法（空、结束 ≤ 开始）时不出图
+const procSpan = computed(() => {
+  const s = new Date(proc.start).getTime()
+  const e = new Date(proc.end).getTime()
+  if (isNaN(s) || isNaN(e) || e <= s) return null
+  return { s, e }
+})
+const procMetric = computed(() => PROC_METRICS.find((m) => m.k === proc.metric) || PROC_METRICS[0])
+const procEmptyText = computed(() => {
+  if (proc.metric === 'q' && proc.st && proc.st.q == null) return '该断面暂无流量监测数据'
+  return '请选择有效的起止时间'
+})
+
+function hashStr(s) {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return h >>> 0
+}
+// 线性同余，保证同一断面的过程线每次打开一致
+function rng(seed) {
+  let s = seed >>> 0
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 }
+}
+
+// 演示版没有历史表：以当前值（流量 q / 水位 wrz）为锚点生成确定性过程；
+// 降雨没有实时值，按「站码 + 绝对时间」生成雨强，5 分钟看时段雨量、日均看日雨量。
+// 正式版换成历史数据接口即可（结构不变）。
+const procData = computed(() => {
+  const st = proc.st
+  const span = procSpan.value
+  const m = procMetric.value
+  if (!st || !span) return null
+  if (m.k === 'q' && st.q == null) return null
+  const cfg = procStep.value
+  const count = Math.min(Math.floor((span.e - span.s) / cfg.step) + 1, 2100)
+  const salt = hashStr(String(st.code || st.nm))
+  const rand = rng(salt)
+  const isDay = cfg.k === 'day'
+  const tidal = !isDay && /长江|黄浦江|苏州河|吴淞江|蕴藻浜|淀浦河/.test(st.riv || '')
+  const phase = rand() * Math.PI * 2
+  const phase2 = rand() * Math.PI * 2
+  // 5 分钟粒度：流量按比例起伏，水位按米数起伏；潮汐站加 12.42h 分量
+  const amp5 = m.k === 'z' ? 0.05 + rand() * 0.08 : 0.08 + rand() * 0.07
+  const tide5 = m.k === 'z'
+    ? (tidal ? 0.18 + rand() * 0.35 : 0.02 + rand() * 0.03)
+    : (tidal ? 0.05 + rand() * 0.05 : 0.015)
+  const noise5 = m.k === 'z' ? 0.008 + rand() * 0.01 : 0.012 + rand() * 0.012
+
+  const pts = []
+  let prevF = null
+  for (let i = 0; i < count; i++) {
+    const hoursBefore = ((count - 1 - i) * cfg.step) / 3600000
+    const t = new Date(span.e - hoursBefore * 3600000)
+    let f
+    if (isDay) {
+      // 日均：日变化被平均掉，留下多日涨落
+      f = (m.k === 'z' ? 0.12 : 0.10) * Math.sin((hoursBefore / (24 * 11)) * Math.PI * 2 + phase)
+        + (m.k === 'z' ? 0.08 : 0.06) * Math.sin((hoursBefore / (24 * 29)) * Math.PI * 2 + phase2)
+        + (rand() - 0.5) * (m.k === 'z' ? 0.04 : 0.03)
+    } else {
+      f = amp5 * Math.sin((hoursBefore / 24) * Math.PI * 2 + phase)
+        + tide5 * Math.sin((hoursBefore / 12.42) * Math.PI * 2 + phase2)
+        + (rand() - 0.5) * 2 * noise5
+      f = prevF == null ? f : f * 0.55 + prevF * 0.45  // 平滑，避免锯齿
+      prevF = f
+    }
+    pts.push({ t, f })
+  }
+
+  let vals
+  if (m.k === 'rain') {
+    // 逐小时雨强：约 8% 的小时下雨，雨峰集中在少数时次
+    const rateOf = (ms) => {
+      const hr = Math.floor(ms / 3600000)
+      const r = rng(hashStr(`rain:${salt}:${hr}`))()
+      return r > 0.92 ? Math.pow((r - 0.92) / 0.08, 2) * 12 : 0
+    }
+    if (isDay) {
+      // 日雨量 = 当天 24 个逐小时雨强之和
+      vals = pts.map(({ t }) => {
+        // 用本地零点，避免 UTC 日界与 x 轴日期错一天
+        const dayStart = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
+        let sum = 0
+        for (let h = 0; h < 24; h++) sum += rateOf(dayStart + h * 3600000)
+        return sum
+      })
+    } else {
+      // 5 分钟雨量（mm）= 小时雨强 × 时段长度，雨峰内再拉开差距
+      vals = pts.map(({ t }) => {
+        const rate = rateOf(t.getTime())
+        const jitter = 0.55 + rng(hashStr(`rainp:${salt}:${t.getTime()}`))() * 0.9
+        return rate * (cfg.step / 3600000) * jitter
+      })
+    }
+  } else {
+    // 水位是加成（米），流量是比例变化；末点回到当前监测值
+    const base = m.k === 'z' ? (st.wrz != null ? Number(st.wrz) : 2.2 + rand() * 1.6) : Number(st.q)
+    const lastF = pts[pts.length - 1].f
+    vals = pts.map((p) => (m.k === 'z' ? base + (p.f - lastF) : base * (1 + p.f - lastF)))
+  }
+
+  const sum = vals.reduce((a, b) => a + b, 0)
+  const multiDay = span.e - span.s > 2 * 864e5
+  const sameYear = new Date(span.s).getFullYear() === new Date(span.e).getFullYear()
+  const labels = pts.map(({ t }) => {
+    const md = `${p2(t.getMonth() + 1)}-${p2(t.getDate())}`
+    if (isDay) return sameYear ? md : `${t.getFullYear()}-${md}`
+    return multiDay ? `${md} ${p2(t.getHours())}:${p2(t.getMinutes())}` : `${p2(t.getHours())}:${p2(t.getMinutes())}`
+  })
+  return {
+    labels,
+    vals,
+    stats: {
+      avg: sum / vals.length,
+      max: Math.max(...vals),
+      min: Math.min(...vals),
+      last: vals[vals.length - 1]
+    }
+  }
+})
+
+function niceStep(raw) {
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)))
+  const n = raw / mag
+  const k = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10
+  return k * mag
+}
+function flowAxis(vals, allowNeg = true) {
+  let lo = Math.min(...vals)
+  let hi = Math.max(...vals)
+  if (!isFinite(lo) || !isFinite(hi)) return { min: 0, max: 1, interval: 0.2, dec: 1 }
+  if (!allowNeg) lo = Math.max(0, lo)
+  if (hi - lo < 1e-6) {
+    const d = Math.max(Math.abs(hi) * 0.2, allowNeg ? Math.abs(lo) * 0.05 : 0.5, 0.5)
+    if (allowNeg) lo -= d
+    hi += d
+  }
+  const pad = (hi - lo) * 0.12
+  if (allowNeg) { lo -= pad; hi += pad } else { lo = Math.max(0, lo - pad); hi += pad }
+  const step = niceStep((hi - lo) / 4)
+  const dec = step >= 1 ? 0 : step >= 0.1 ? 1 : 2
+  return {
+    min: allowNeg ? Math.floor(lo / step) * step : Math.max(0, Math.floor(lo / step) * step),
+    max: Math.ceil(hi / step) * step,
+    interval: step,
+    dec
+  }
+}
+
+function hexA(hex, a) {
+  const v = parseInt(String(hex).slice(1), 16)
+  return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`
+}
+
+const procOption = computed(() => {
+  const d = procData.value
+  if (!d) return {}
+  const m = procMetric.value
+  const ax = flowAxis(d.vals, m.k !== 'q')
+  const hasNeg = m.k === 'q' && ax.min < 0
+  const c = m.color
+  return {
+    animationDuration: 400,
+    grid: { left: 56, right: 18, top: 18, bottom: 32 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'line', lineStyle: { color: 'rgba(1,125,228,.45)', type: 'dashed' } },
+      formatter: (arr) => `${arr[0].axisValue}<br/>${m.s}：<b>${nf(arr[0].value, m.dec)}</b> ${m.unit}`
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: m.k === 'rain',
+      data: d.labels,
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#dcdfe6' } },
+      axisLabel: { fontSize: 11, color: '#606266', margin: 10, hideOverlap: true }
+    },
+    yAxis: {
+      type: 'value',
+      min: ax.min,
+      max: ax.max,
+      interval: ax.interval,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { fontSize: 11, color: '#606266', formatter: (v) => Number(v).toFixed(ax.dec) },
+      splitLine: { lineStyle: { color: '#f0f2f5' } }
+    },
+    series: [
+      m.k === 'rain'
+        ? {
+            type: 'bar',
+            barMaxWidth: procStep.value.k === 'day' ? 16 : 6,
+            itemStyle: { color: c, borderRadius: [2, 2, 0, 0] },
+            data: d.vals
+          }
+        : {
+            type: 'line',
+            smooth: 0.3,
+            showSymbol: false,
+            symbolSize: 5,
+            lineStyle: { width: 2, color: c },
+            itemStyle: { color: c },
+            areaStyle: {
+              color: {
+                type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [
+                  { offset: 0, color: hexA(c, 0.22) },
+                  { offset: 1, color: hexA(c, 0.02) }
+                ]
+              }
+            },
+            // 流量为负（倒流）时画一条 0 线，方向变化一眼可见
+            markLine: hasNeg
+              ? { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: '#c0c4cc', type: 'dashed', width: 1 }, data: [{ yAxis: 0 }] }
+              : undefined,
+            data: d.vals
+          }
+    ]
+  }
+})
+
+function openProc(st) {
+  if (drag.moved) { drag.moved = false; return }
+  tip.show = false
+  proc.st = st
+  proc.metric = 'q'
+  proc.step = '5min'
+  const end = procNow()
+  proc.end = toInput(end)
+  proc.start = toInput(new Date(end.getTime() - 24 * 3600 * 1000))
+  proc.show = true
+  setSel(st.nm)
+}
+
+// 换粒度时把过短的区间自动拉长（日均至少看 7 天），并压到最大跨度内
+function setStep(k) {
+  if (proc.step === k) return
+  proc.step = k
+  const cfg = PROC_STEPS.find((s) => s.k === k) || PROC_STEPS[0]
+  let s = new Date(proc.start).getTime()
+  const e = new Date(proc.end).getTime()
+  if (isNaN(s) || isNaN(e)) return
+  if (k === 'day' && e - s < 7 * 864e5) s = e - 30 * 864e5
+  if (e - s > cfg.maxDays * 864e5) s = e - cfg.maxDays * 864e5
+  proc.start = toInput(new Date(s))
+}
+
+// 改起止时间：保证结束晚于开始，并把跨度限制在粒度允许的范围内
+function onTimeChange(which) {
+  const cfg = procStep.value
+  const maxSpan = cfg.maxDays * 864e5
+  let s = new Date(proc.start).getTime()
+  let e = new Date(proc.end).getTime()
+  if (isNaN(s) || isNaN(e)) return
+  if (which === 'start') {
+    if (s >= e) e = s + cfg.step
+    if (e - s > maxSpan) e = s + maxSpan
+    proc.end = toInput(new Date(e))
+  } else {
+    if (e <= s) s = e - cfg.step
+    if (e - s > maxSpan) s = e - maxSpan
+    proc.start = toInput(new Date(s))
+  }
+}
+
+function closeProc() { proc.show = false }
 
 // 点击地图空白处立即取消选中；拖动地图结束后的那次 click 不处理
 function onMapClick() {
@@ -773,9 +1115,11 @@ function selectRow(nm) {
   setSel(nm)
 }
 
-// Esc 立即取消选中
+// Esc：先关过程弹窗，没有弹窗时再取消选中
 function onKey(e) {
-  if (e.key === 'Escape') clearSel()
+  if (e.key !== 'Escape') return
+  if (proc.show) { closeProc(); return }
+  clearSel()
 }
 
 function exportCsv() {
