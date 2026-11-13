@@ -15,6 +15,7 @@
         </select>
         <span class="cnt">共 {{ rows.length }} 份</span>
         <ExportButton @export="exportCsv" />
+        <button class="btn-dl rm-add" type="button" @click="addReport">＋ 添加</button>
       </div>
     </div>
 
@@ -47,7 +48,7 @@
               </td>
             </tr>
             <tr v-if="!rows.length">
-              <td colspan="7" class="empty">暂无月报记录，请到「月报生成」中生成并保存</td>
+              <td colspan="7" class="empty">暂无月报记录，点击右上角「＋ 添加」生成月报</td>
             </tr>
           </tbody>
         </table>
@@ -76,6 +77,7 @@
 
 <script setup>
 import { ref, computed, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ReportPaper from './components/ReportPaper.vue'
 import ExportButton from '@/components/ExportButton.vue'
@@ -83,8 +85,13 @@ import { ECO_MONTHS, genEcoReport } from '@/data/ecoFlow'
 import { ecoReports, removeEcoReport } from '@/store/ecoReport'
 import { downloadCsv } from '@/utils/csv'
 
+const router = useRouter()
+
 const fYear = ref('all')
 const fMonth = ref('all')
+
+/** 添加：跳到月报生成页 */
+function addReport() { router.push('/zp/stlrb') }
 
 const years = computed(() => [...new Set(ecoReports.value.map((r) => r.year))].sort((a, b) => b - a))
 const rows = computed(() =>
@@ -132,3 +139,10 @@ function remove(rec) {
     .catch(() => {})
 }
 </script>
+
+<style scoped>
+.rm-add {
+  height: 30px; padding: 0 14px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; margin-left: 2px;
+}
+</style>

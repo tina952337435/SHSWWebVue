@@ -1,6 +1,6 @@
 /**
  * 生态流量（水位）保障断面与月报数据
- * 断面口径取自《水资源评价模块-功能界面设计说明书》P8「生态流量专题库」11 个保障断面
+ * 12 个保障断面 = 9 个上海市重点河道（水位考核）+ 3 个国家重点河湖（大通/松浦大桥/淀山湖·元荡）
  * 月统计值按「年-月」确定性生成：同一年月每次生成结果一致，不同月份数据不同（demo 演示用）
  */
 
@@ -9,17 +9,18 @@
  * 每个断面只考核其中一个指标：干流控制断面看流量，内河/湖荡断面看水位。
  */
 export const ECO_SECTIONS = [
+  { river: '浦东新区', name: '邬家路桥', q: 420, z: 2.98, metric: 'z', owner: '市级' },
+  { river: '闵行区', name: '北桥', q: 360, z: 2.80, metric: 'z', owner: '市级' },
+  { river: '宝山区', name: '罗店', q: 300, z: 2.50, metric: 'z', owner: '市级' },
+  { river: '嘉定区', name: '嘉定南门', q: 320, z: 2.58, metric: 'z', owner: '市级' },
+  { river: '金山区', name: '张堰', q: 280, z: 2.95, metric: 'z', owner: '区级' },
+  { river: '松江区', name: '陈坊桥', q: 340, z: 2.52, metric: 'z', owner: '区级' },
+  { river: '青浦区', name: '青浦南门', q: 380, z: 2.85, metric: 'z', owner: '区级' },
+  { river: '奉贤区', name: '南桥', q: 400, z: 2.35, metric: 'z', owner: '区级' },
+  { river: '崇明区', name: '崇明新城', q: 450, z: 3.05, metric: 'z', owner: '区级' },
+  { river: '长江', name: '大通', q: 28500, z: 14.40, metric: 'q', owner: '跨省（全国名录）', national: true },
   { river: '黄浦江', name: '松浦大桥', q: 1180, z: 2.85, metric: 'q', owner: '跨省（全国名录）', national: true },
-  { river: '淀山湖·元荡', name: '元荡（商榻水位）', q: 680, z: 2.98, metric: 'z', owner: '跨省（全国名录）', national: true },
-  { river: '黄浦江', name: '米市渡', q: 980, z: 2.60, metric: 'q', owner: '市级' },
-  { river: '黄浦江', name: '沙港', q: 1420, z: 3.20, metric: 'q', owner: '市级' },
-  { river: '黄浦江', name: '黄浦公园', q: 1560, z: 3.44, metric: 'q', owner: '市级' },
-  { river: '长江', name: '高桥', q: 28500, z: 3.90, metric: 'q', owner: '市级' },
-  { river: '长江', name: '堡镇', q: 28800, z: 4.10, metric: 'q', owner: '市级' },
-  { river: '苏州河', name: '北新泾', q: 620, z: 3.05, metric: 'z', owner: '市级' },
-  { river: '苏州河', name: '赵屯', q: 380, z: 2.88, metric: 'z', owner: '区级' },
-  { river: '蕰藻浜', name: '顾村', q: 540, z: 2.95, metric: 'z', owner: '区级' },
-  { river: '淀浦河', name: '青浦', q: 460, z: 2.62, metric: 'z', owner: '区级' }
+  { river: '淀山湖', name: '元荡', q: 680, z: 2.98, metric: 'z', owner: '跨省（全国名录）', national: true }
 ]
 
 export const ECO_YEARS = [2024, 2025, 2026]
@@ -36,7 +37,7 @@ const round = (v, d) => Number(v.toFixed(d))
 /** 单月断面明细 */
 function rowsOf(year, month) {
   return ECO_SECTIONS.map((s, i) => {
-    // 堡镇（idx 6）模拟长江口咸潮影响，保障率偏低
+    // idx 6 模拟保障率偏低，便于演示达标/未达标差异
     const rate = i === 6
       ? round(92.5 + h(year, month, i) * 5.0, 1)
       : round(93.5 + h(year, month, i) * 6.5, 1)
@@ -77,9 +78,6 @@ export function genEcoReport(year, month) {
 
   const completeness = round(97.4 + h(year, month, 900) * 1.8, 1)
   const totalWarn = 3 + Math.floor(h(year, month, 901) * 5)      // 3 ~ 7
-  const red = h(year, month, 902) > 0.7 ? 1 : 0
-  const orange = 1 + Math.floor(h(year, month, 903) * 2)
-  const yellow = Math.max(0, totalWarn - red - orange)
 
   const failing = cur.rows.filter((r) => !r.met)
 
@@ -96,7 +94,7 @@ export function genEcoReport(year, month) {
     basic: cur.basic,
     fail: cur.fail,
     completeness,
-    warnings: { total: totalWarn, red, orange, yellow },
+    warnings: { total: totalWarn },
     momDiff: round(cur.overall - prev.overall, 1),
     yoyDiff: round(cur.overall - lastYear.overall, 1),
     failing

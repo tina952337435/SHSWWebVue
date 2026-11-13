@@ -33,7 +33,7 @@
     <div class="shell">
       <!-- 左侧子菜单：结构与样式对齐参考项目 MixLayout（el-menu + 60px 折叠头） -->
       <aside
-        v-if="activeModule === 'zp'"
+        v-if="sideMenu && sideMenu.length"
         class="side"
         :class="{ collapsed }"
       >
@@ -50,7 +50,7 @@
           class="side-menu"
           @select="goSub"
         >
-          <template v-for="it in SUBMENUS.zp" :key="it.k">
+          <template v-for="it in sideMenu" :key="it.k">
             <!-- 有子菜单 -->
             <el-sub-menu v-if="it.children" :index="it.k">
               <template #title>
@@ -110,13 +110,22 @@ const activeModule = computed(() => {
 })
 
 const activeSub = computed(() => {
-  return route.params.sub || route.meta.sub || ''
+  const s = route.params.sub || route.meta.sub || ''
+  // 月报生成页由对应月报管理进入，菜单仍高亮该项
+  if (s === 'stlrb') return 'stlrmgr'
+  if (s === 'brgen') return 'brmgr'
+  return s
 })
+
+// 左侧子菜单：跟随当前模块（水资源评价 / 水文监测 等有二级菜单的模块）
+const sideMenu = computed(() => SUBMENUS[activeModule.value] || [])
 
 function goModule(k) {
   if (k === 'home') router.push('/home')
-  else if (k === 'zp') router.push('/zp/rt')
-  else router.push(`/${k}`)
+  else {
+    const subs = SUBMENUS[k] || []
+    router.push(subs.length ? `/${k}/${subs[0].k}` : `/${k}`)
+  }
 }
 
 // 顶栏导航：带 href 的项（如驾驶舱）走外链，其余走内部路由
@@ -126,19 +135,20 @@ function goNav(m) {
 }
 
 function goSub(k) {
-  if (k === 'rt') router.push('/zp/rt')
-  else if (k === 'qr') router.push('/zp/qr')
-  else router.push(`/zp/${k}`)
+  router.push(`/${activeModule.value}/${k}`)
 }
 
 // 二级菜单图标（与参考项目一致：一级菜单项带图标）
 const SUB_ICONS = {
   rt: Odometer,
+  qrsj: Document,
   qr: Histogram,
   jcrl: Switch,
   wt: DataAnalysis,
   stll: Bell,
-  stl: TrendCharts
+  stl: TrendCharts,
+  stlrmgr: TrendCharts,
+  brmgr: Document
 }
 
 // 侧边栏折叠

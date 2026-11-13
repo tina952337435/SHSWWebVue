@@ -31,7 +31,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { SYS_TITLE, MODULES } from '@/config/menu'
+import { SYS_TITLE, MODULES, SUBMENUS } from '@/config/menu'
 
 const router = useRouter()
 
@@ -40,7 +40,9 @@ const modules = computed(() => MODULES.filter((m) => !m.href))
 
 function go(k) {
   if (k === 'home') router.push('/home')
-  else if (k === 'zp') router.push('/zp/rt')
-  else router.push(`/${k}`)
+  else {
+    const subs = SUBMENUS[k] || []
+    router.push(subs.length ? `/${k}/${subs[0].k}` : `/${k}`)
+  }
 }
 </script>

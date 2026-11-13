@@ -18,13 +18,13 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import EcoFlowMonitor from './EcoFlowMonitor.vue'
+import WaterLevelMonitor from './WaterLevelMonitor.vue'
 import EcoFlowStats from './EcoFlowStats.vue'
 import EcoFlowWarnings from './EcoFlowWarnings.vue'
 import EcoFlowRules from './EcoFlowRules.vue'
 
 const TABS = [
-  { k: 'overview', n: '监测总览', c: EcoFlowMonitor },
+  { k: 'overview', n: '监测总览', c: WaterLevelMonitor },
   { k: 'stats', n: '统计分析', c: EcoFlowStats },
   { k: 'warnings', n: '预警记录', c: EcoFlowWarnings },
   { k: 'rules', n: '预警规则', c: EcoFlowRules }

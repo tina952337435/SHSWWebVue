@@ -1,20 +1,18 @@
 /**
  * 生态流量预警规则（demo）
- * 默认 11 个保障断面各一条规则，可在「预警规则」页编辑，存 localStorage。
+ * 规则口径：水位低于目标水位、且持续天数满足时即触发预警（不再分三色等级）。
+ * 默认 12 个保障断面各一条规则，可在「预警规则」页编辑，存 localStorage。
  */
 import { ref } from 'vue'
 import { ECO_SECTIONS } from '@/data/ecoFlow'
 
-const KEY = 'shsw-eco-warn-rules-v1'
+const KEY = 'shsw-eco-warn-rules-v3'
 
 export const DEFAULT_RULES = ECO_SECTIONS.map((s) => ({
   id: `rule-${s.name}`,
   section: s.name,
   river: s.river,
   target: s.z,
-  yellow: 0.01,
-  orange: 0.035,
-  red: 0.06,
   days: 1,
   enabled: true
 }))
@@ -60,9 +58,6 @@ export function addRule(section, patch) {
     section: s.name,
     river: s.river,
     target: s.z,
-    yellow: 0.01,
-    orange: 0.035,
-    red: 0.06,
     days: 1,
     enabled: true,
     ...patch

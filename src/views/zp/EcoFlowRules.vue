@@ -1,7 +1,7 @@
 <template>
   <div class="ew">
     <div class="io-cond">
-      <span class="ew-note">水位低于生态目标达到对应阈值、且持续天数满足时触发预警</span>
+      <span class="ew-note">水位低于目标水位、且持续天数满足时触发预警</span>
       <div class="ew-ops">
         <ExportButton @export="exportCsv" />
         <span @click="openAdd">+ 新增规则</span>
@@ -19,9 +19,6 @@
                 <th>断面</th>
                 <th>所在河道</th>
                 <th>目标水位（m）</th>
-                <th>黄色阈值（m）</th>
-                <th>橙色阈值（m）</th>
-                <th>红色阈值（m）</th>
                 <th>持续天数</th>
                 <th style="width:80px">启用</th>
                 <th style="width:110px">操作</th>
@@ -33,10 +30,7 @@
                 <td>{{ r.section }}</td>
                 <td>{{ r.river }}</td>
                 <td class="num">{{ r.target.toFixed(2) }}</td>
-                <td class="num">{{ r.yellow.toFixed(3) }}</td>
-                <td class="num">{{ r.orange.toFixed(3) }}</td>
-                <td class="num">{{ r.red.toFixed(3) }}</td>
-                <td class="num">{{ r.days }}</td>
+                <td class="num">{{ r.days }} 天</td>
                 <td><el-switch v-model="r.enabled" size="small" @change="toggle(r)" /></td>
                 <td>
                   <span class="op" @click="openEdit(r)">编辑</span>
@@ -44,7 +38,7 @@
                 </td>
               </tr>
               <tr v-if="!rules.length">
-                <td colspan="10" class="empty">暂无预警规则，可点击右上角「新增规则」</td>
+                <td colspan="7" class="empty">暂无预警规则，可点击右上角「新增规则」</td>
               </tr>
             </tbody>
           </table>
@@ -52,7 +46,7 @@
       </div>
     </div>
 
-    <el-dialog v-model="show" :title="editingId ? '编辑预警规则' : '新增预警规则'" width="440px">
+    <el-dialog v-model="show" :title="editingId ? '编辑预警规则' : '新增预警规则'" width="420px">
       <div class="rl-form">
         <div class="rl-row">
           <label>断面</label>
@@ -65,20 +59,9 @@
           <div class="rl-val">{{ form.target.toFixed(2) }} m</div>
         </div>
         <div class="rl-row">
-          <label>黄色阈值（偏低 m）</label>
-          <el-input-number v-model="form.yellow" :min="0.001" :max="0.5" :step="0.005" :precision="3" />
-        </div>
-        <div class="rl-row">
-          <label>橙色阈值（偏低 m）</label>
-          <el-input-number v-model="form.orange" :min="0.001" :max="0.5" :step="0.005" :precision="3" />
-        </div>
-        <div class="rl-row">
-          <label>红色阈值（偏低 m）</label>
-          <el-input-number v-model="form.red" :min="0.001" :max="0.5" :step="0.005" :precision="3" />
-        </div>
-        <div class="rl-row">
           <label>持续天数</label>
           <el-input-number v-model="form.days" :min="1" :max="15" :step="1" />
+          <span class="rl-tip">低于目标水位连续达该天数即触发预警</span>
         </div>
         <div class="rl-row">
           <label>启用</label>
@@ -106,9 +89,6 @@ const editingId = ref(null)
 const form = reactive({
   section: '',
   target: 0,
-  yellow: 0.01,
-  orange: 0.035,
-  red: 0.06,
   days: 1,
   enabled: true
 })
@@ -130,50 +110,34 @@ function openAdd() {
     return
   }
   const s = sectionOptions.value[0]
-  Object.assign(form, {
-    section: s.name, target: s.z, yellow: 0.01, orange: 0.035, red: 0.06, days: 1, enabled: true
-  })
+  Object.assign(form, { section: s.name, target: s.z, days: 1, enabled: true })
   editingId.value = null
   show.value = true
 }
 
 function openEdit(r) {
   Object.assign(form, {
-    section: r.section, target: r.target,
-    yellow: r.yellow, orange: r.orange, red: r.red,
-    days: r.days, enabled: r.enabled
+    section: r.section, target: r.target, days: r.days, enabled: r.enabled
   })
   editingId.value = r.id
   show.value = true
 }
 
 function submit() {
-  if (!(form.yellow < form.orange && form.orange < form.red)) {
-    ElMessage.warning({ message: '阈值需满足：黄色 < 橙色 < 红色', offset: 78 })
-    return
-  }
   if (editingId.value) {
-    updateRule(editingId.value, {
-      yellow: form.yellow, orange: form.orange, red: form.red,
-      days: form.days, enabled: form.enabled
-    })
+    updateRule(editingId.value, { days: form.days, enabled: form.enabled })
     ElMessage.success({ message: '规则已更新', offset: 78 })
   } else {
-    addRule(form.section, {
-      yellow: form.yellow, orange: form.orange, red: form.red,
-      days: form.days, enabled: form.enabled
-    })
+    addRule(form.section, { days: form.days, enabled: form.enabled })
     ElMessage.success({ message: '规则已新增', offset: 78 })
   }
   show.value = false
 }
 
 function exportCsv() {
-  const head = ['序号', '断面', '所在河道', '目标水位（m）', '黄色阈值（m）', '橙色阈值（m）', '红色阈值（m）', '持续天数', '启用']
+  const head = ['序号', '断面', '所在河道', '目标水位（m）', '持续天数', '启用']
   const lines = rules.value.map((r, i) => [
-    i + 1, r.section, r.river,
-    r.target.toFixed(2), r.yellow.toFixed(3), r.orange.toFixed(3), r.red.toFixed(3),
-    r.days, r.enabled ? '启用' : '停用'
+    i + 1, r.section, r.river, r.target.toFixed(2), r.days, r.enabled ? '启用' : '停用'
   ])
   downloadCsv('生态流量预警规则.csv', head, lines)
 }
@@ -204,3 +168,7 @@ function reset() {
     .catch(() => {})
 }
 </script>
+
+<style scoped>
+.rl-tip { margin-left: 12px; font-size: 12px; color: #8296a8; }
+</style>
