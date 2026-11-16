@@ -4,7 +4,7 @@
       <h1>{{ SYS_TITLE }}</h1>
       <p>
         长江口、省市边界水文监测站网信息化项目升级改造 · 统一门户<br />
-        本批次聚焦【水资源评价】模块，完成「主要断面流量实时感知」「历年水资源量查询」两项功能界面设计。
+        本批次聚焦【水资源评价】【站网管理】两个模块，完成主要业务功能的界面设计。
       </p>
       <div class="tags">
         <span v-for="m in modules" :key="m.k">{{ m.n }}</span>
@@ -17,7 +17,7 @@
         v-for="m in modules"
         :key="m.k"
         class="mod-card"
-        :class="{ on: m.k === 'zp' }"
+        :class="{ on: ['zp', 'zw'].includes(m.k) }"
         @click="go(m.k)"
       >
         <div class="mi">{{ m.icon }}</div>

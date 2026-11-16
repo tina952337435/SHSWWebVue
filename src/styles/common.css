@@ -15,6 +15,19 @@ ul, li { list-style: none; }
   --ok: #67c23a; --warn: #e6a23c; --dgr: #f56c6c;
   --up: #f56c6c; --dn: #67c23a;
   --txt: #303133; --txt2: #606266; --txt3: #909399;
+  /* 从 danzhan 单站组件拷贝来的主题变量，映射为浅色主题（原为深色大屏） */
+  --menuTop: #ffffff;
+  --menuTopSelected: #017de4;
+  --mtablecolor: #5b6b7b;
+  --mtabletrcolor: #c9d8e6;
+  --titled1: #017de4;
+  --titled2: #d6e4f0;
+  --title2: #35506a;
+  --popContentHeadbg: #e8f3fd;
+  --dialogColor: #ffffff;
+  --sel_wraplabelcolorSel: #017de4;
+  --basicInformationBg: #ffffff;
+  --widgetcolor: #2b3a48;
 }
 
 /* ============ 布局 ============ */

@@ -82,7 +82,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled, Connection, Odometer, Cloudy, DataAnalysis, Histogram, Document,
-  Monitor, User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts
+  Monitor, User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts,
+  Location, OfficeBuilding, Tickets, Ship, Collection
 } from '@element-plus/icons-vue'
 import { SYS_TITLE, MODULES, SUBMENUS } from '@/config/menu'
 
@@ -140,6 +141,14 @@ function goSub(k) {
 
 // 二级菜单图标（与参考项目一致：一级菜单项带图标）
 const SUB_ICONS = {
+  gis: Location,
+  stations: OfficeBuilding,
+  stat: DataAnalysis,
+  jz: TrendCharts,
+  bz: Collection,
+  tjdc: Document,
+  gd: Tickets,
+  cb: Ship,
   rt: Odometer,
   qrsj: Document,
   qr: Histogram,

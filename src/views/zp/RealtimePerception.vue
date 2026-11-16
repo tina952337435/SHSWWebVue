@@ -326,34 +326,15 @@ import { DIST } from '@/data/districts'
 import ExportButton from '@/components/ExportButton.vue'
 import BarChart from '@/components/BarChart.vue'
 import { downloadCsv } from '@/utils/csv'
+import {
+  X0, Y0, XS, YS, MW, MH, proj, cjX, cjY, cjLon, cjLat,
+  WORLD, WORLD_HALF, tileUrl, fallbackUrl
+} from '@/utils/mapProj'
 
 const SZ = STN.filter((s) => s.sz)
 const OUT = STN.filter((s) => !s.sz)
 
-/* ================= 投影：上海2000 城建坐标（与一张图瓦片格网一致） ================= */
-// 一张图的瓦片缓存按上海本地格网（城建坐标，单位米）编号，底图本身也是在这个
-// 平面上渲染的。矢量数据必须换算到同一套城建坐标再画，才能和底图严丝合缝；
-// 用经纬度 + 墨卡托投影叠上去，越往外围偏得越多（墨卡托在 31°N 放大约 1.17 倍）。
-// 经纬度 → 城建坐标 的一阶变换由参考工程里同一套水利片区的「经纬度版」与
-// 「2000 版」逐点拟合得到，残差 < 5 m。
-const CJ = { ax: 95192.4, bx: -28.79, cx: -11561907.8, ay: 50.97, by: 110872.1, cy: -3469339.4 }
-const CJ_DET = CJ.ax * CJ.by - CJ.bx * CJ.ay
-const cjX = (lon, lat) => CJ.ax * lon + CJ.bx * lat + CJ.cx
-const cjY = (lon, lat) => CJ.ay * lon + CJ.by * lat + CJ.cy
-const cjLon = (x, y) => (CJ.by * (x - CJ.cx) - CJ.bx * (y - CJ.cy)) / CJ_DET
-const cjLat = (x, y) => (CJ.ax * (y - CJ.cy) - CJ.ay * (x - CJ.cx)) / CJ_DET
-
-const BBOX = { x0: -88000, x1: 82500, y0: -76000, y1: 79500 }  // 城建坐标范围（米）
-const MW = 1000
-const X0 = BBOX.x0                       // 视口左边界
-const Y0 = BBOX.y1                       // 视口上边界（城建 y 最大）
-const XS = BBOX.x1 - X0
-const YS = Y0 - BBOX.y0
-const MH = Math.round((MW * YS) / XS)    // 保持 1:1 比例，避免底图拉伸
-
-function proj(lon, lat) {
-  return [((cjX(lon, lat) - X0) / XS) * MW, ((Y0 - cjY(lon, lat)) / YS) * MH]
-}
+/* 投影与瓦片配置见 src/utils/mapProj.js（站网GIS 共用） */
 function pathOf(ring) {
   let d = ''
   ring.forEach((p, i) => {
@@ -363,19 +344,6 @@ function pathOf(ring) {
   return d + 'Z'
 }
 
-/* ================= OneMap 底图瓦片 ================= */
-const TILE_BASE = 'https://service-api.onemap.sh.cegn.cn/OneMapServer/rest/services/j01_basemap_normal/MapServer/tile'
-const TILE_TOKEN = 'd01b7f932ff44c04bd0b026e9daaae97'
-// 一张图缓存把城建坐标（米）直接铺在与 Web 墨卡托同尺寸的世界格网上编号：
-//   col = (x + 20037508.34) / 世界宽 × 2^级别
-//   row = (20037508.34 − y) / 世界宽 × 2^级别
-// 所以行列号直接由城建坐标算出，不需要任何额外偏移。
-const WORLD = 40075016.69
-const WORLD_HALF = 20037508.342787
-const tileUrl = (z, r, c) => `${TILE_BASE}/${z}/${r}/${c}?jcmp-token=${TILE_TOKEN}`
-// 备用浅色底图（标准 Web 墨卡托）：OneMap 不可用时自动顶上，按经纬度反算位置贴上
-const TILE_FALLBACK = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile'
-const fallbackUrl = (z, x, y) => `${TILE_FALLBACK}/${z}/${y}/${x}`
 const tileErr = ref(0)
 const tileOk = ref(false)
 // 只有一张都没加载成功时才判定服务不可用；平移出上海范围导致的零星 404 不切底图
