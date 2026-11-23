@@ -144,6 +144,27 @@ function ringBox(ring) {
 
 export const DISTRICTS = Object.keys(DIST)
 
+/** 各行政区面积（km²，按多边形鞋带公式 + 中纬度缩放近似计算） */
+export const DISTRICT_AREA = (() => {
+  const m = {}
+  for (const [name, ring] of Object.entries(DIST)) {
+    if (!Array.isArray(ring) || !ring.length) { m[name] = 0; continue }
+    let area = 0
+    const n = ring.length
+    let latSum = 0
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      area += ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+      latSum += ring[i][1]
+    }
+    area = Math.abs(area) / 2 // 平方度
+    const midLat = (latSum / n) * Math.PI / 180
+    const km2 = area * 111.32 * 111.32 * Math.cos(midLat)
+    m[name] = Number(km2.toFixed(1))
+  }
+  return m
+})()
+
 /* ---------------- 生成 ---------------- */
 function build() {
   const seeds = STN.filter((s) => s.lon != null && s.lat != null)

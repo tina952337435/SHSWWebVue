@@ -50,7 +50,7 @@
           :transform="`translate(${d.x.toFixed(1)} ${d.y.toFixed(1)}) scale(${scaleK}) translate(${(-d.x).toFixed(1)} ${(-d.y).toFixed(1)})`"
           @mouseenter="showTip(d.s, $event)"
           @mouseleave="hideTip"
-          @click.stop="selectRow(d.s.name)"
+          @click.stop="openAnnual(d.s.name)"
         >
           <!-- 外发光 -->
           <circle
@@ -206,6 +206,48 @@
         </div>
       </div>
 
+      <!-- 年度过程线弹窗 -->
+      <div v-if="annual.show" class="an-mask" @click.self="closeAnnual">
+        <div class="an-pop" @click.stop>
+          <div class="an-hd">
+            <div>
+              <div class="an-title">{{ annualData ? annualData.name : '' }} · 年度过程线</div>
+              <div v-if="annualData" class="an-sub">{{ WL_START }} — {{ WL_DATE }} · 共 {{ annualData.days }} 天</div>
+            </div>
+            <button class="an-x" type="button" @click="closeAnnual">×</button>
+          </div>
+
+          <div v-if="annualData" class="an-bd">
+            <div class="an-stats">
+              <div class="an-stat">
+                <span>期间均值</span>
+                <b>{{ fmt(annualData.avg, annualData.isQ ? 0 : 2) }}<i>{{ annualData.unit }}</i></b>
+              </div>
+              <div class="an-stat">
+                <span>期间最低</span>
+                <b>{{ fmt(annualData.lo, annualData.isQ ? 0 : 2) }}<i>{{ annualData.unit }}</i></b>
+              </div>
+              <div class="an-stat">
+                <span>低于目标天数</span>
+                <b>{{ annualData.lowDays }}<i>天</i></b>
+              </div>
+              <div class="an-stat">
+                <span>年度保障率</span>
+                <b>{{ annualData.rate.toFixed(1) }}<i>%</i></b>
+              </div>
+            </div>
+
+            <div class="an-chart">
+              <BarChart v-if="annualOption" :option="annualOption" :height="260" />
+            </div>
+          </div>
+
+          <div class="an-ft">
+            <button class="an-btn" type="button" @click="closeAnnual">关闭</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 操作提示 toast -->
       <div v-if="toast.show" class="wl-toast">{{ toast.text }}</div>
     </div>
@@ -216,6 +258,7 @@
         <div class="stat"><div class="k">控制断面</div><div class="v">{{ WL_SECTIONS.length + WL_AUX.length }}<small>个</small></div></div>
         <div class="stat"><div class="k">达标</div><div class="v" style="color:#26a869">{{ meetCount }}<small>个</small></div></div>
         <div class="stat"><div class="k">低于目标</div><div class="v" style="color:#e5484d">{{ warnCount }}<small>个</small></div></div>
+        <div class="stat"><div class="k">年度平均保障率</div><div class="v" style="color:#017de4">{{ annualRate }}<small>%</small></div></div>
       </div>
 
       <div class="card" style="flex: none">
@@ -256,7 +299,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in sectionRows()" :key="r.name" :class="{ sel: FS.sel === r.name }" @click="selectRow(r.name)">
+              <tr v-for="r in sectionRows()" :key="r.name" :class="{ sel: FS.sel === r.name }" @click="openAnnual(r.name)">
                 <td class="muted">{{ r.idx }}</td>
                 <td><b>{{ r.name }}</b></td>
                 <td>{{ r.district }}</td>
@@ -279,6 +322,9 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { WL_SECTIONS, WL_AUX, WL_ALL, WL_TIME, isBelow, stationMetric, sectionRows, auxRows } from '@/data/waterLevel'
 import { publish } from '@/store/ecoWarnRecords'
+import BarChart from '@/components/BarChart.vue'
+import { ECO_SECTIONS } from '@/data/ecoFlow'
+import { levelOf, flowOf, listDays, latestOverview } from '@/data/ecoWarn'
 
 /* ================= 投影：上海2000 城建坐标（与一张图瓦片格网一致） ================= */
 const CJ = { ax: 95192.4, bx: -28.79, cx: -11561907.8, ay: 50.97, by: 110872.1, cy: -3469339.4 }
@@ -583,7 +629,142 @@ function onMapClick() {
   if (drag.moved) { drag.moved = false; return }
   clearSel()
 }
-function selectRow(nm) { setSel(nm) }
+
+/* ================= 年度过程线 + 年度平均保障率 ================= */
+const WL_DATE = WL_TIME.slice(0, 10)          // '2026-11-12'
+const WL_START = `${WL_DATE.slice(0, 4)}-01-01`
+const AUX_ECO_NAME = { '淀山湖·元荡': '元荡' }
+/** 地图站名 → ECO_SECTIONS 下标（9 个重点河道同名，国家重点河湖「淀山湖·元荡」在 ECO 里叫「元荡」） */
+function ecoIndex(name) {
+  const n = AUX_ECO_NAME[name] || name
+  return ECO_SECTIONS.findIndex((s) => s.name === n)
+}
+
+const annual = reactive({ show: false, name: '', idx: -1 })
+
+const annualData = computed(() => {
+  if (annual.idx < 0) return null
+  const s = ECO_SECTIONS[annual.idx]
+  const isQ = s.metric === 'q'
+  const target = isQ ? s.q : s.z
+  const unit = isQ ? 'm³/s' : 'm'
+  const days = listDays(WL_START, WL_DATE)
+  const series = days.map((d) => ({
+    label: `${d.m}/${d.d}`,
+    value: isQ ? flowOf(annual.idx, d.y, d.m, d.d) : levelOf(annual.idx, d.y, d.m, d.d)
+  }))
+  let sum = 0
+  let lo = Infinity
+  let met = 0
+  series.forEach((p) => {
+    sum += p.value
+    if (p.value < lo) lo = p.value
+    if (p.value >= target) met += 1
+  })
+  return {
+    name: annual.name,
+    isQ,
+    target,
+    unit,
+    series,
+    days: series.length,
+    avg: sum / series.length,
+    lo,
+    lowDays: series.length - met,
+    rate: (met / series.length) * 100
+  }
+})
+
+const annualOption = computed(() => {
+  const d = annualData.value
+  if (!d) return null
+  const vals = d.series.map((p) => p.value)
+  const lo = Math.min(...vals, d.target)
+  const hi = Math.max(...vals, d.target)
+  const pad = Math.max((hi - lo) * 0.18, d.isQ ? 2 : 0.02)
+  return {
+    grid: { left: 66, right: 24, top: 34, bottom: 30 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (ps) => {
+        const p = d.series[ps[0].dataIndex]
+        if (!p) return ''
+        const diff = p.value - d.target
+        const tip = diff >= 0
+          ? `高于目标 ${fmt(diff, d.isQ ? 0 : 2)} ${d.unit}`
+          : `低于目标 ${fmt(Math.abs(diff), d.isQ ? 0 : 2)} ${d.unit}`
+        return `${d.name} ${p.label}<br/>${d.isQ ? '日均流量' : '日均水位'}：<b>${fmt(p.value, d.isQ ? 0 : 2)}</b> ${d.unit}<br/>${tip}`
+      }
+    },
+    xAxis: {
+      type: 'category',
+      data: d.series.map((p) => p.label),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#dcdfe6' } },
+      axisLabel: { fontSize: 10, color: '#909399', margin: 8, hideOverlap: true }
+    },
+    yAxis: {
+      type: 'value',
+      min: Number((lo - pad).toFixed(d.isQ ? 0 : 2)),
+      max: Number((hi + pad).toFixed(d.isQ ? 0 : 2)),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { fontSize: 11, color: '#606266', formatter: (v) => fmt(v, d.isQ ? 0 : 2) },
+      splitLine: { lineStyle: { color: '#f0f2f5' } }
+    },
+    series: [
+      {
+        name: d.isQ ? '日均流量' : '日均水位',
+        type: 'line',
+        smooth: 0.2,
+        showSymbol: false,
+        symbolSize: 4,
+        lineStyle: { width: 2, color: '#017de4' },
+        itemStyle: { color: '#017de4' },
+        areaStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(1,125,228,.22)' },
+              { offset: 1, color: 'rgba(1,125,228,.02)' }
+            ]
+          }
+        },
+        data: d.series.map((p) => p.value),
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { color: '#26a869', type: 'dashed', width: 1.5 },
+          label: {
+            formatter: `生态目标 ${fmt(d.target, d.isQ ? 0 : 2)} ${d.unit}`,
+            position: 'insideEndTop',
+            color: '#26a869',
+            fontSize: 11
+          },
+          data: [{ yAxis: d.target }]
+        }
+      }
+    ]
+  }
+})
+
+/** 今年以来平均保障率：12 个断面「年初至今」保障率的均值 */
+const annualRate = computed(() => {
+  const ov = latestOverview(WL_DATE)
+  if (!ov.length) return '—'
+  return (ov.reduce((a, r) => a + r.rate, 0) / ov.length).toFixed(1)
+})
+
+function openAnnual(name) {
+  if (drag.moved) { drag.moved = false; return } // 拖图松手这次 click 不弹窗
+  const idx = ecoIndex(name)
+  if (idx < 0) return
+  setSel(name)
+  annual.name = name
+  annual.idx = idx
+  annual.show = true
+}
+function closeAnnual() { annual.show = false }
 
 /* ================= 预警发布 ================= */
 const warnModal = reactive({ show: false, section: '', level: '', desc: '' })
@@ -613,6 +794,7 @@ function showToast(text) {
 function onKey(e) {
   if (e.key !== 'Escape') return
   if (warnModal.show) { closeWarn(); return }
+  if (annual.show) { closeAnnual(); return }
   clearSel()
 }
 function onDocClick(e) { if (!e.target.closest('.ms')) openMs.value = null }
@@ -657,6 +839,50 @@ function hideTip() { tip.show = false }
 </script>
 
 <style scoped>
+/* 统计卡：监测总览 4 项 */
+.stat-row { grid-template-columns: repeat(4, 1fr); }
+
+/* 年度过程线弹窗 */
+.an-mask {
+  position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  padding: 22px; background: rgba(13, 35, 58, .36);
+}
+.an-pop {
+  width: min(760px, 96%); overflow: hidden; background: #fff;
+  border-radius: 10px; box-shadow: 0 24px 60px rgba(10, 35, 60, .4);
+}
+.an-hd {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 18px 22px 14px; background: linear-gradient(135deg, #1c86e8, #005db8); color: #fff;
+}
+.an-title { font-size: 17px; font-weight: 700; }
+.an-sub { font-size: 12px; opacity: .85; margin-top: 4px; }
+.an-x {
+  width: 28px; height: 28px; padding: 0; flex: none;
+  border: 1px solid rgba(255, 255, 255, .5); border-radius: 50%;
+  background: rgba(255, 255, 255, .12); color: #fff; font-size: 18px; line-height: 1; cursor: pointer;
+}
+.an-x:hover { background: rgba(255, 255, 255, .28); }
+.an-bd { padding: 18px 22px 4px; }
+.an-stats { display: flex; gap: 10px; }
+.an-stat {
+  flex: 1; padding: 9px 12px; border: 1px solid #dde8f7; border-radius: 6px;
+  background: linear-gradient(180deg, #f5f9ff, #eaf2fd);
+}
+.an-stat > span { display: block; font-size: 12px; color: #7f8a99; }
+.an-stat > b {
+  display: block; margin-top: 2px; font-size: 20px; line-height: 1.25;
+  color: #1a7ae0; font-variant-numeric: tabular-nums;
+}
+.an-stat > b i { font-size: 12px; font-weight: 400; font-style: normal; margin-left: 3px; opacity: .8; }
+.an-chart { margin-top: 12px; }
+.an-ft { display: flex; justify-content: flex-end; gap: 12px; padding: 10px 22px 20px; }
+.an-btn {
+  height: 36px; padding: 0 24px; border: 1px solid #dcdfe6; border-radius: 6px;
+  background: #fff; color: #5b6b7b; font-size: 14px; cursor: pointer;
+}
+.an-btn:hover { border-color: #017de4; color: #017de4; }
+
 /* 地图标题 */
 .wl-title {
   position: absolute; left: 12px; top: 12px; z-index: 6; pointer-events: none;

@@ -83,6 +83,25 @@ ul, li { list-style: none; }
   .topbar .logo .tt { font-size: 16px; }
 }
 
+/* 顶栏项包一层定位容器：高 65px 与顶栏等高，下拉才能贴住顶栏下沿 */
+.topbar .topnav .nav-item { position: relative; display: flex; align-items: center; height: 65px; }
+.topbar .topnav .nav-drop {
+  position: absolute; top: 100%; left: 4px; z-index: 60;
+  width: 220px; padding: 4px; background: #fff;
+  border: 1px solid #e4e7ed; border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+}
+.topbar .topnav .nav-drop .nd-item {
+  display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px;
+  border-radius: 4px; font-size: 14px; color: var(--txt2); cursor: pointer;
+  white-space: nowrap; user-select: none; transition: background .12s, color .12s;
+}
+.topbar .topnav .nav-drop .nd-item .el-icon { font-size: 16px; color: var(--nav); }
+.topbar .topnav .nav-drop .nd-item:hover { background: #f5f9ff; color: var(--nav); }
+.topbar .topnav .nav-drop .nd-item.on { background: #ecf5ff; color: var(--nav); font-weight: 600; }
+.drop-enter-active, .drop-leave-active { transition: opacity .12s, transform .12s; }
+.drop-enter-from, .drop-leave-to { opacity: 0; transform: translateY(-4px); }
+
 /* ---------- 主体 + 侧栏 ---------- */
 .shell { flex: 1; display: flex; overflow: hidden; min-height: 0; }
 /* 侧栏：对齐参考项目 MixLayout —— 200px 白色、60px 折叠头、el-menu 默认项高 56px */
@@ -728,6 +747,44 @@ table.dt .net { font-weight: 700; }
 .pf-share > span { font-size: 11px; color: var(--txt3); font-variant-numeric: tabular-nums; }
 table.dt .bold { font-weight: 700; }
 table.dt .dim { color: #8a94a3; }
+
+/* ---------- 水情预报模块共用 ---------- */
+.sw-page { height: 100%; padding: 10px; display: flex; flex-direction: column; gap: 10px; background: #f2f4f7; overflow: hidden; }
+.sw-cond { flex: none; display: flex; align-items: center; gap: 16px; padding: 9px 12px; background: #fff; border: 1px solid var(--bnd); border-radius: 4px; }
+.sw-cond > label { font-size: 14px; font-weight: 700; color: var(--txt2); white-space: nowrap; }
+.sw-cond select, .sw-cond input[type="date"] {
+  height: 32px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 0 8px;
+  font-size: 14px; font-family: inherit; color: var(--txt); background: #fff; outline: none;
+}
+.sw-cond select:focus, .sw-cond input[type="date"]:focus { border-color: var(--nav); }
+.sw-cond .sw-cond-right { margin-left: auto; font-size: 13px; color: var(--txt3); }
+.sw-cards { flex: none; display: flex; gap: 10px; }
+.sw-cards .io-stat { flex: 1; min-width: 0; }
+.sw-main { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.sw-side { width: 300px; flex: none; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
+.sw-table { flex: 1; min-height: 0; }
+.sw-table .bd { padding: 0; }
+.sw-toolbar { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid #ebeef5; }
+.sw-toolbar .ops { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.sw-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sw-chip {
+  height: 30px; line-height: 30px; padding: 0 14px; border: 1px solid #dcdfe6; border-radius: 15px;
+  font-size: 14px; color: var(--txt2); cursor: pointer; background: #fff; user-select: none;
+}
+.sw-chip:hover { border-color: var(--nav); color: var(--nav); }
+.sw-chip.on { background: var(--nav); border-color: var(--nav); color: #fff; }
+.sw-top5 { padding: 8px 12px 10px; }
+.sw-top5 .it { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 13px; color: var(--txt2); }
+.sw-top5 .it .no {
+  width: 18px; height: 18px; border-radius: 3px; background: #eef3f9; color: var(--txt3);
+  font-size: 11px; display: flex; align-items: center; justify-content: center; flex: none;
+}
+.sw-top5 .it.top1 .no { background: var(--nav); color: #fff; }
+.sw-top5 .it.top2 .no { background: #7fb6ec; color: #fff; }
+.sw-top5 .it.top3 .no { background: #b6d6f5; color: #fff; }
+.sw-top5 .it .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sw-top5 .it .vl { font-weight: 700; color: var(--nav); font-variant-numeric: tabular-nums; }
+.lv.blue { color: #0b6bb5; background: #eaf3fe; border: 1px solid #c7defa; }
 
 /* ---------- 滚动条 ---------- */
 ::-webkit-scrollbar { width: 9px; height: 9px; }

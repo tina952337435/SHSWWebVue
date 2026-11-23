@@ -9,15 +9,32 @@
       </div>
 
       <nav class="topnav">
-        <a
+        <div
           v-for="m in MODULES"
           :key="m.k"
-          :class="{ on: activeModule === m.k }"
-          @click="goNav(m)"
+          class="nav-item"
+          @mouseenter="openDrop(m)"
+          @mouseleave="closeDrop"
         >
-          <el-icon class="ni"><component :is="ICONS[m.k]" /></el-icon>
-          <span>{{ m.n }}</span>
-        </a>
+          <a class="nav-link" :class="{ on: activeModule === m.k }" @click="goNav(m)">
+            <el-icon class="ni"><component :is="ICONS[m.k]" /></el-icon>
+            <span>{{ m.n }}</span>
+          </a>
+          <transition name="drop">
+            <div v-if="m.drop && dropKey === m.k" class="nav-drop">
+              <div
+                v-for="s in SUBMENUS[m.k]"
+                :key="s.k"
+                class="nd-item"
+                :class="{ on: activeModule === m.k && activeSub === s.k }"
+                @click="goDrop(m.k, s.k)"
+              >
+                <el-icon><component :is="SUB_ICONS[s.k] || Document" /></el-icon>
+                <span>{{ s.n }}</span>
+              </div>
+            </div>
+          </transition>
+        </div>
       </nav>
 
       <div class="right">
@@ -82,7 +99,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled, Connection, Odometer, Cloudy, DataAnalysis, Histogram, Document,
-  Monitor, User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts,
+  Monitor, User, ArrowDown, Fold, Expand, Switch, Bell, TrendCharts, Cpu,
   Location, OfficeBuilding, Tickets, Ship, Collection
 } from '@element-plus/icons-vue'
 import { SYS_TITLE, MODULES, SUBMENUS } from '@/config/menu'
@@ -115,6 +132,8 @@ const activeSub = computed(() => {
   // 月报生成页由对应月报管理进入，菜单仍高亮该项
   if (s === 'stlrb') return 'stlrmgr'
   if (s === 'brgen') return 'brmgr'
+  // 质控数据页由「质控数据管理」进入
+  if (s === 'qrsj') return 'qcmanage'
   return s
 })
 
@@ -129,8 +148,26 @@ function goModule(k) {
   }
 }
 
+// 顶栏悬浮下拉（仅 MODULES 里 drop: true 的项，目前是「水情预报」）
+const dropKey = ref('')
+let dropTimer = null
+function openDrop(m) {
+  if (!m.drop) return
+  clearTimeout(dropTimer)
+  dropKey.value = m.k
+}
+function closeDrop() {
+  clearTimeout(dropTimer)
+  dropTimer = setTimeout(() => { dropKey.value = '' }, 120)
+}
+function goDrop(mk, sk) {
+  dropKey.value = ''
+  router.push(`/${mk}/${sk}`)
+}
+
 // 顶栏导航：带 href 的项（如驾驶舱）走外链，其余走内部路由
 function goNav(m) {
+  dropKey.value = ''
   if (m.href) { window.open(m.href, '_blank', 'noopener,noreferrer'); return }
   goModule(m.k)
 }
@@ -144,6 +181,7 @@ const SUB_ICONS = {
   gis: Location,
   stations: OfficeBuilding,
   stat: DataAnalysis,
+  sb: Cpu,
   jz: TrendCharts,
   bz: Collection,
   tjdc: Document,
@@ -151,13 +189,21 @@ const SUB_ICONS = {
   cb: Ship,
   rt: Odometer,
   qrsj: Document,
+  qcmanage: Document,
   qr: Histogram,
+  model: Cpu,
   jcrl: Switch,
   wt: DataAnalysis,
   stll: Bell,
   stl: TrendCharts,
   stlrmgr: TrendCharts,
-  brmgr: Document
+  brmgr: Document,
+  rainiso: Cloudy,
+  zh: Odometer,
+  hsyb: TrendCharts,
+  tfjc: Cloudy,
+  tffx: DataAnalysis,
+  yjfb: Bell
 }
 
 // 侧边栏折叠

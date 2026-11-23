@@ -1,7 +1,7 @@
 <template>
   <div class="ew">
     <div class="io-cond">
-      <span class="ew-note">水位低于目标水位、且持续天数满足时触发预警</span>
+      <span class="ew-note">连续三天低于保障目标时触发预警</span>
       <div class="ew-ops">
         <ExportButton @export="exportCsv" />
         <span @click="openAdd">+ 新增规则</span>
@@ -19,7 +19,7 @@
                 <th>断面</th>
                 <th>所在河道</th>
                 <th>目标水位（m）</th>
-                <th>持续天数</th>
+                <!-- <th>持续天数</th> -->
                 <th style="width:80px">启用</th>
                 <th style="width:110px">操作</th>
               </tr>
@@ -30,7 +30,7 @@
                 <td>{{ r.section }}</td>
                 <td>{{ r.river }}</td>
                 <td class="num">{{ r.target.toFixed(2) }}</td>
-                <td class="num">{{ r.days }} 天</td>
+                <!-- <td class="num">{{ r.days }} 天</td> -->
                 <td><el-switch v-model="r.enabled" size="small" @change="toggle(r)" /></td>
                 <td>
                   <span class="op" @click="openEdit(r)">编辑</span>

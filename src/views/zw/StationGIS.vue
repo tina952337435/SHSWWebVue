@@ -70,8 +70,8 @@
           />
         </g>
 
-        <!-- 全市视野：行政区气泡 -->
-        <g v-if="!zoomed">
+        <!-- 全市视野：行政区气泡（沿革时也强制显示单站，不显示气泡） -->
+        <g v-if="!zoomed && !evoMode">
           <g
             v-for="c in clusters"
             :key="c.name"
@@ -101,8 +101,8 @@
           </g>
         </g>
 
-        <!-- 单站 -->
-        <g v-if="zoomed">
+        <!-- 单站（沿革模式下也强制显示单站） -->
+        <g v-if="zoomed || evoMode">
           <g
             v-for="(d, i) in dots"
             :key="d.st.code"
@@ -213,8 +213,8 @@
         <button class="btn-exp" type="button" @click="openExport">导出专题图</button>
       </div>
 
-      <!-- 图例 -->
-      <div class="gis-legend" @click.stop>
+      <!-- 图例（沿革模式下隐藏，让位给站网密度图） -->
+      <div v-if="!evoMode" class="gis-legend" @click.stop>
         <div class="gl-hd">图例</div>
         <div class="gl-grp">点符号（按监测项目）</div>
         <div class="gl-row"><i class="s-cir"></i>水位</div>
@@ -385,6 +385,15 @@
         <span class="lb">{{ panelOpen ? '收起' : '明细' }}</span>
       </button>
 
+      <!-- 站网密度沿革：历年/分区站数柱状图 -->
+      <div v-if="evoMode" class="evo-chart" @click.stop @mousedown.stop>
+        <div class="ec-hd">
+          <span class="ec-t">行政分区站网密度</span>
+          <span class="ec-now">{{ year }} 年 · 共 <b>{{ visibleStations.length }}</b> 站</span>
+        </div>
+        <BarChart :option="evoOption" :height="160" />
+      </div>
+
       <!-- 站点沿革时间轴：点「站点沿革」才出现 -->
       <div v-if="evoMode" class="tl-bar" @click.stop @mousedown.stop>
         <span class="tl-hd">站点沿革</span>
@@ -411,12 +420,17 @@
       </div>
 
       <div class="side-filters">
-        <!-- 维度切换 + 该维度的选项合并成一行 -->
-        <div class="f-row">
+        <div class="filter-head">
+          <span class="ft">筛选条件</span>
           <div class="seg">
             <span :class="{ on: dim === 'dist' }" @click="setDim('dist')">行政区</span>
             <span :class="{ on: dim === 'slp' }" @click="setDim('slp')">水利片区</span>
           </div>
+          <span class="fr" @click="resetFilters">重置</span>
+        </div>
+
+        <div class="f-row">
+          <span class="f-lb">{{ dim === 'dist' ? '行政区' : '水利片区' }}</span>
           <div class="f-opts">
             <span class="opt all" :class="{ on: !filters[dim] }" @click="filters[dim] = ''">全部</span>
             <span
@@ -442,15 +456,11 @@
             >{{ o }}</span>
           </div>
         </div>
-
       </div>
 
       <div class="side-toolbar">
         <span class="tb-tip">共 <b>{{ filtered.length }}</b> 站</span>
-        <span class="tb-ops">
-          <span class="tb-reset" @click="resetFilters">重置</span>
-          <ExportButton @export="exportList" />
-        </span>
+        <span class="tb-ops"><ExportButton @export="exportList" /></span>
       </div>
 
       <div class="side-table">
@@ -562,7 +572,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   STATIONS, ALL_STATIONS, ALL_CLASSES, ALL_ELEMENTS, STATION_CATS, ALL_SLPS, DISTRICTS,
-  stationsAtYear, EVOLUTION_EVENTS,
+  DISTRICT_AREA, stationsAtYear, EVOLUTION_EVENTS,
   upDown, extremes, feat5y, deviceList, inspectHistory, last24h
 } from '@/data/stationNetwork'
 import { DIST } from '@/data/districts'
@@ -825,6 +835,55 @@ function toggleEvo() {
   }
 }
 
+/* 站网密度沿革：当前年份各行政分区站网密度（站数 ÷ 面积）柱状图 */
+const evoSeries = computed(() => {
+  const list = stationsAtYear(year.value)
+  return DISTRICTS
+    .map((d) => {
+      const count = list.filter((s) => s.dist === d).length
+      const area = DISTRICT_AREA[d] || 1
+      const density = Number(((count / area) * 100).toFixed(1)) // 站/百平方公里
+      return { name: d, count, area, density }
+    })
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.density - a.density)
+})
+const evoOption = computed(() => {
+  const rows = evoSeries.value
+  return {
+    grid: { left: 36, right: 8, top: 16, bottom: 42 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (p) => {
+        const r = rows[p[0].dataIndex]
+        return `${r.name}<br/>站网密度：${r.density} 站/百km²<br/>站点：${r.count} 站<br/>面积：${r.area} km²`
+      }
+    },
+    xAxis: {
+      type: 'category',
+      data: rows.map((r) => r.name),
+      axisLabel: { interval: 0, fontSize: 9, color: '#8a9aab', rotate: 30 },
+      axisLine: { lineStyle: { color: '#dfe6ee' } },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: 'value',
+      name: '站/百km²',
+      nameTextStyle: { fontSize: 9, color: '#8a9aab' },
+      axisLabel: { fontSize: 9, color: '#8a9aab' },
+      splitLine: { lineStyle: { color: '#eef2f6' } }
+    },
+    series: [{
+      type: 'bar',
+      data: rows.map((r) => r.density),
+      barMaxWidth: 16,
+      itemStyle: { color: '#017de4', borderRadius: [2, 2, 0, 0] },
+      label: { show: true, position: 'top', fontSize: 9, color: '#5b6b7b', formatter: '{c}' }
+    }]
+  }
+})
+
 /* 沿革记录 */
 const evo = reactive({ open: false, type: '' })
 const EVO_TYPES = ['建站', '迁站', '更名', '撤站']
@@ -895,7 +954,7 @@ const curSlp = computed(() => (dim.value === 'slp' ? filters.slp : ''))
 const groupOf = (s) => (dim.value === 'slp' ? s.slp : s.dist)
 
 const clusters = computed(() => {
-  if (zoomed.value) return []
+  if (zoomed.value || evoMode.value) return []
   const g = new Map()
   for (const s of filtered.value) {
     const xy = XY.get(s.code)
@@ -912,7 +971,7 @@ const clusters = computed(() => {
 
 const showLabels = computed(() => view.w <= MW * 0.20)
 const dots = computed(() => {
-  if (!zoomed.value) return []
+  if (!zoomed.value && !evoMode.value) return []
   const list = filtered.value
   const labelSet = new Set()
   if (showLabels.value) {
@@ -1327,6 +1386,37 @@ onBeforeUnmount(() => {
 .gis.side-open .map-scale { right: 550px; }
 .gis.side-open .map-north { right: 542px; }
 
+/* 站网密度沿革柱状图卡片 */
+.evo-chart {
+  position: absolute;
+  left: 12px;
+  bottom: 58px;
+  z-index: 8;
+  width: 360px;
+  background: rgba(255, 255, 255, .97);
+  border: 1px solid var(--bnd);
+  border-radius: 5px;
+  box-shadow: 0 2px 10px rgba(20, 50, 80, .08);
+  padding: 8px 10px 4px;
+  transition: left .18s ease;
+}
+.gis.side-open .evo-chart { left: 12px; }
+.ec-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.ec-t { font-size: 12.5px; font-weight: 700; color: #245c85; white-space: nowrap; }
+.ec-sel {
+  height: 24px;
+  border: 1px solid #d6dfe9;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #35506a;
+  background: #fff;
+  padding: 0 4px;
+  outline: none;
+}
+.ec-sel:focus { border-color: #017de4; }
+.ec-now { margin-left: auto; font-size: 11.5px; color: #8a9aab; white-space: nowrap; }
+.ec-now b { color: #017de4; font-size: 13px; }
+
 /* 站点沿革时间轴 */
 .tl-bar {
   position: absolute;
@@ -1572,48 +1662,62 @@ onBeforeUnmount(() => {
 .side-hd b { font-size: 14px; font-weight: 700; color: #303133; }
 .side-hd .cnt { margin-left: auto; font-size: 13px; color: #909399; font-weight: 400; }
 
-.side-filters { flex: none; padding: 8px 12px 7px; border-bottom: 1px solid #eef2f6; background: #fbfdff; }
-.f-row { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
+.side-filters { flex: none; padding: 10px 14px 11px; border-bottom: 1px solid #ebeef5; background: #fff; }
+
+/* 筛选标题行：标题 + 维度切换 + 重置 */
+.filter-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #f0f4f8;
+}
+.filter-head .ft { font-size: 13px; font-weight: 700; color: #303133; }
+.filter-head .fr { margin-left: auto; font-size: 12px; color: #017de4; cursor: pointer; }
+.filter-head .fr:hover { text-decoration: underline; }
+
+.f-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
+.f-row + .f-row { border-top: 1px dashed #f3f6fa; }
 .f-lb {
   flex: none;
-  width: 96px;
-  font-size: 12px;
-  color: #93a4b5;
-  line-height: 22px;
+  width: 52px;
+  font-size: 12.5px;
+  color: #95a3b3;
+  line-height: 26px;
   white-space: nowrap;
 }
-.f-opts { display: flex; flex-wrap: wrap; gap: 0 1px; min-width: 0; }
+.f-opts { display: flex; flex-wrap: wrap; gap: 2px 3px; min-width: 0; }
 .opt {
-  font-size: 12px;
-  line-height: 22px;
-  padding: 0 6px;
+  font-size: 12.5px;
+  line-height: 26px;
+  padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 12px;
   color: #5b6b7b;
   cursor: pointer;
   background: transparent;
   white-space: nowrap;
 }
-.opt:hover { background: #eef6fe; color: #017de4; }
+.opt:hover { background: #f2f8ff; color: #017de4; }
 .opt.on { background: #017de4; color: #fff; font-weight: 500; }
 /* “全部”是兜底项，不用蓝色强调，避免每行都有一块蓝 */
-.opt.all.on { background: #e8eef5; color: #35506a; font-weight: 500; }
+.opt.all.on { background: #eaf0f6; color: #35506a; font-weight: 500; }
 
 /* 维度切换：连体按钮 */
 .seg {
   flex: none;
   display: flex;
-  width: 96px;
+  width: 132px;
   border: 1px solid #d6e2ee;
-  border-radius: 3px;
+  border-radius: 4px;
   overflow: hidden;
-  margin-top: 0;
 }
 .seg span {
   flex: 1;
   text-align: center;
   font-size: 12px;
-  line-height: 20px;
+  line-height: 22px;
   padding: 0;
   color: #5b6b7b;
   cursor: pointer;

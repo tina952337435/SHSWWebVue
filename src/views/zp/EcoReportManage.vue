@@ -43,7 +43,7 @@
               <td>{{ r.savedAt }}</td>
               <td>
                 <span class="op" @click="preview(r)">预览</span>
-                <span class="op" @click="download(r)">下载</span>
+                <span class="op" @click="openTemplate">下载</span>
                 <span class="op del" @click="remove(r)">删除</span>
               </td>
             </tr>
@@ -55,35 +55,39 @@
       </div>
     </div>
 
-    <!-- 预览弹窗 -->
-    <el-dialog v-model="pvVisible" title="月报预览" width="880px" append-to-body>
-      <div class="rm-pv">
-        <ReportPaper v-if="pvReport" :report="pvReport" />
+    <!-- 预览弹窗：显示收集到的官方模板 PDF -->
+    <div v-if="pvVisible" class="pv-mask" @click.self="pvVisible = false">
+      <div class="pv-box">
+        <div class="pv-hd">
+          <span>月报预览</span>
+          <button class="pv-x" type="button" @click="pvVisible = false">×</button>
+        </div>
+        <div class="pv-bd">
+          <iframe v-if="pvOk === true" :src="TEMPLATE_URL" class="pv-frame" />
+          <div v-else-if="pvOk === false" class="pv-miss">
+            <div class="t1">未找到月报模板文件</div>
+            <div class="t2">
+              请把《上海市河湖生态流量（水位）监测月报（2026年9月）.pdf》<br />
+              复制到项目 <code>public/templates/</code> 目录，并命名为 <code>eco-monthly.pdf</code>
+            </div>
+          </div>
+          <div v-else class="pv-loading">正在加载模板…</div>
+        </div>
       </div>
-      <template #footer>
-        <button class="btn-plain" @click="pvVisible = false">关闭</button>
-        <button class="btn-dl" @click="download(pvRecord)">⬇ 下载文档</button>
-      </template>
-    </el-dialog>
-
-    <!-- 打印区：仅打印时显示 -->
-    <Teleport to="body">
-      <div class="print-root">
-        <ReportPaper v-if="printReport" :report="printReport" />
-      </div>
-    </Teleport>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import ReportPaper from './components/ReportPaper.vue'
 import ExportButton from '@/components/ExportButton.vue'
-import { ECO_MONTHS, genEcoReport } from '@/data/ecoFlow'
+import { ECO_MONTHS } from '@/data/ecoFlow'
 import { ecoReports, removeEcoReport } from '@/store/ecoReport'
 import { downloadCsv } from '@/utils/csv'
+
+const TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/eco-monthly.pdf`
 
 const router = useRouter()
 
@@ -101,22 +105,23 @@ const rows = computed(() =>
 )
 
 const pvVisible = ref(false)
-const pvRecord = ref(null)
-const pvReport = ref(null)
-const printReport = ref(null)
+const pvOk = ref(null) // null=检测中 true=可预览 false=文件缺失
 
-function preview(rec) {
-  pvRecord.value = rec
-  pvReport.value = genEcoReport(rec.year, rec.month)
+/** 打开预览：先确认模板文件确实存在且是 PDF（避免 404 时 iframe 渲染成首页） */
+async function preview() {
   pvVisible.value = true
+  pvOk.value = null
+  try {
+    const res = await fetch(TEMPLATE_URL)
+    const buf = await res.arrayBuffer()
+    const sig = new TextDecoder().decode(buf.slice(0, 4))
+    pvOk.value = res.ok && sig === '%PDF'
+  } catch (e) {
+    pvOk.value = false
+  }
 }
 
-async function download(rec) {
-  printReport.value = genEcoReport(rec.year, rec.month)
-  await nextTick()
-  window.addEventListener('afterprint', () => { printReport.value = null }, { once: true })
-  window.print()
-}
+function openTemplate() { window.open(TEMPLATE_URL, '_blank', 'noopener,noreferrer') }
 
 function exportCsv() {
   const head = ['序号', '报告名称', '期号', '统计月份', '目标保障率', '生成时间']
@@ -145,4 +150,37 @@ function remove(rec) {
   height: 30px; padding: 0 14px; font-size: 13px; font-weight: 600;
   white-space: nowrap; margin-left: 2px;
 }
+/* 预览弹窗：整屏居中 */
+.pv-mask {
+  position: fixed; inset: 0; z-index: 2000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(13, 35, 58, .45);
+}
+.pv-box {
+  width: min(1400px, 94vw); height: 92vh;
+  display: flex; flex-direction: column;
+  background: #fff; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(10, 35, 60, .4);
+}
+.pv-hd {
+  flex: none; display: flex; align-items: center; justify-content: space-between;
+  height: 52px; padding: 0 18px; border-bottom: 1px solid #ebeef5;
+  font-size: 16px; font-weight: 700; color: #1f2d3d;
+}
+.pv-x {
+  width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: #909399; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.pv-x:hover { background: #f2f4f7; color: #017de4; }
+.pv-bd { flex: 1; min-height: 0; padding: 0; background: #f5f7fa; }
+.pv-frame { width: 100%; height: 100%; border: none; background: #fff; display: block; }
+
+.pv-loading { height: 100%; display: flex; align-items: center; justify-content: center; color: #8a94a3; font-size: 13px; }
+.pv-miss {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px; text-align: center;
+}
+.pv-miss .t1 { font-size: 15px; font-weight: 700; color: #5b6b7b; }
+.pv-miss .t2 { font-size: 12.5px; line-height: 2; color: #8296a8; }
+.pv-miss code { padding: 1px 6px; border-radius: 3px; background: #eaf1f9; color: #1f6fb5; font-size: 12px; }
 </style>

@@ -7,7 +7,7 @@
 import { ref } from 'vue'
 import { calcInOut, IO_STATIONS } from '@/data/inOutFlow'
 
-const KEY = 'shsw-boundary-report-v1'
+const KEY = 'shsw-boundary-report-v2'
 const pad = (n) => String(n).padStart(2, '0')
 const r2 = (v) => Math.round(v * 100) / 100
 
@@ -57,10 +57,25 @@ function load() {
   }
   // 首次进入：预置近 3 个月月报
   return [
-    { y: 2026, m: 10, at: '2026-11-03 09:12' },
-    { y: 2026, m: 9, at: '2026-10-09 10:05' },
-    { y: 2026, m: 8, at: '2026-09-02 09:38' }
+    ...seedMonths()
   ].map((s) => ({ ...genBoundaryReport(s.y, s.m), savedAt: s.at }))
+}
+
+/** 预置 2024-01 ~ 2026-10 共 34 份月报，生成时间落在次月 2—5 日 */
+function seedMonths() {
+  const out = []
+  for (let y = 2024; y <= 2026; y++) {
+    for (let m = 1; m <= 12; m++) {
+      if (y === 2026 && m > 10) break
+      const ny = m === 12 ? y + 1 : y
+      const nm = m === 12 ? 1 : m + 1
+      const day = 2 + ((y + m) % 4) // 2—5 日
+      const hh = 8 + ((y * 3 + m * 7) % 8)
+      const mm = (y * 13 + m * 17) % 60
+      out.push({ y, m, at: `${ny}-${pad(nm)}-${pad(day)} ${pad(hh)}:${pad(mm)}` })
+    }
+  }
+  return out.reverse() // 新月份在前
 }
 
 export const boundaryReports = ref(load())
